@@ -117,6 +117,7 @@ def test_other_screen_text_is_not_spoken(text):
     ("Locals: Hell yeah!! X", "Locals: Hell yeah!!"),
     ("SEL Locals: I know you? I get around a lot.. T", "Locals: I know you? I get around a lot.."),
     ("Jason: Me and Lucia. We go.", "Jason: Me and Lucia. We go."),
+    ("TOPAWN SEL Staff Member: Can I get you something?", "Staff Member: Can I get you something?"),
 ])
 def test_phone_timer_and_stray_numbers_are_removed(raw, cleaned):
     assert clean_ocr_text(raw) == cleaned

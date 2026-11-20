@@ -85,12 +85,19 @@ def drop_leading_fragment(text: str) -> str:
         if (first.isalpha() and first.islower() and len(first) <= MAX_LEADING_FRAGMENT_LETTERS
                 and second[:1].isupper()):
             return " ".join(tokens[1:])
-        rest = " ".join(tokens[1:])
-        is_icon_or_hud = (len(first) == 1 or first.isdigit()
-                          or (first.isalpha() and first.isupper() and len(first) <= MAX_LEADING_FRAGMENT_LETTERS))
-        if is_icon_or_hud and SPEAKER_PATTERN.match(rest):
-            return rest  # gomb-ikon (X, R1…), HUD-szám vagy -felirat („SEL”) a beszélő neve előtt
+    # Gomb-ikon (X, R1…), HUD-szám vagy csupa nagybetűs tábla („TOPAWN SEL”) a beszélő neve előtt
+    sign_count = 0
+    while sign_count < len(tokens) - 1 and _is_icon_or_sign(tokens[sign_count]):
+        sign_count += 1
+    for start in range(sign_count, 0, -1):  # a leghosszabb levágástól indulunk
+        rest = " ".join(tokens[start:])
+        if SPEAKER_PATTERN.match(rest):
+            return rest
     return text
+
+
+def _is_icon_or_sign(token: str) -> bool:
+    return len(token) == 1 or token.isdigit() or (token.isalpha() and token.isupper())
 
 
 def drop_call_timer(text: str) -> str:

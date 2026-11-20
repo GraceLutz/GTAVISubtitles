@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from tkinter import ttk
 from typing import Callable
 
-from .config import MAX_FONT_SIZE_RATIO, MIN_FONT_SIZE_RATIO, AppConfig
+from .config import BOLD_FONT_PATH, MAX_FONT_SIZE_RATIO, MIN_FONT_SIZE_RATIO, THIN_FONT_PATH, AppConfig
 from .languages import LANGUAGES, find_language
 from .translator import KEY_ENV_VARS, TRANSLATOR_LABELS
 
@@ -98,6 +98,7 @@ class SettingsWindow:
         self._opacity = tk.DoubleVar()
         self._hide_original = tk.BooleanVar()
         self._only_spoken = tk.BooleanVar()
+        self._thin_font = tk.BooleanVar()
         ttk.Separator(frame).grid(row=6, column=0, columnspan=3, sticky="ew", pady=10)
         ttk.Label(frame, text="Betűméret").grid(row=7, column=0, sticky="w")
         font_scale = tk.Scale(frame, variable=self._font, orient="horizontal", length=220,
@@ -117,6 +118,10 @@ class SettingsWindow:
         ttk.Checkbutton(frame, text="Csak a kimondott szöveg („Név: szöveg” sorok)", variable=self._only_spoken,
                         command=lambda: self._change({"only_spoken_lines": self._only_spoken.get()})
                         ).grid(row=13, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        ttk.Checkbutton(frame, text="Vékony betű (mint a GTA-ban)", variable=self._thin_font,
+                        command=lambda: self._change(
+                            {"font_path": THIN_FONT_PATH if self._thin_font.get() else BOLD_FONT_PATH})
+                        ).grid(row=14, column=0, columnspan=3, sticky="w")
         ttk.Button(frame, text="Panel vissza az angol felirat helyére",
                    command=lambda: self._change({"subtitle_x": None, "subtitle_y": None})
                    ).grid(row=10, column=1, columnspan=2, sticky="w", pady=(4, 0))
@@ -177,6 +182,7 @@ class SettingsWindow:
             self._opacity.set(round(config.panel_opacity / 255 * PERCENT))
             self._hide_original.set(config.hide_original)
             self._only_spoken.set(config.only_spoken_lines)
+            self._thin_font.set(config.font_path == THIN_FONT_PATH)
             field_name = AI_MODEL_FIELDS.get(config.translator)
             self._model.set(getattr(config, field_name) if field_name else "")
             self._model_entry.configure(state="normal" if field_name else "disabled")

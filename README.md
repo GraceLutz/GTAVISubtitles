@@ -108,6 +108,7 @@ Ha máshová húzod a panelt, az eredeti angol szöveget egy sötét doboz takar
 - **AI modell:** Claude-nál vagy GPT-nél átírható, Enterrel érvényes.
 - **Betűméret, háttér fedése:** csúszkák, azonnal látszik a hatásuk.
 - **Angol felirat eltakarása**, valamint **panel vissza az eredeti helyre**.
+- **Vékony betű (mint a GTA-ban):** a beszélő neve türkiz, a szöveg fehér, halvány árnyékkal.
 - **Csak a kimondott szöveg:** csak a „Név: szöveg” párbeszédsorokat fordítja; küldetésszöveg,
   tábla, menü, telefonhívás-kijelző nem megy fordításra (alapból bekapcsolva).
 - Alul az állapot: melyik fordító fut, **a mért fordítási idő (ms)**, és ha hiba van, mi a gond.
@@ -220,7 +221,8 @@ Az overlay ablak csak képet mutat. A hanghoz válassz egyet:
 | `only_spoken_lines` | `true` | csak a „Név: szöveg” párbeszédsorok fordítása |
 | `panel_opacity` | `245` | a panel háttere, 0 (átlátszó) – 255 (teljesen fedő) |
 | `subtitle_x` / `subtitle_y` | `null` | a panel közepe a kép arányában; `null` = az angol felirat helyén |
-| `font_path` | Segoe UI Bold | bármilyen `.ttf`, ami tudja a célnyelv betűit |
+| `font_path` | Segoe UI (vékony, GTA-stílus) | bármilyen `.ttf`; a panel „Vékony betű” kapcsolója Segoe UI és Segoe UI Bold között vált |
+| `speaker_color` | `"#7ECFD6"` | a beszélő nevének színe (`#RRGGBB`), mint a GTA-feliratban |
 | `font_size_ratio` | `0.034` | betűméret a képmagasság arányában (0.015–0.08) |
 | `fullscreen` | `true` | teljes képernyőn indul |
 

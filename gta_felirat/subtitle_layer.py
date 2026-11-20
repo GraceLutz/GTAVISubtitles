@@ -13,8 +13,8 @@ import numpy as np
 
 from .config import MAX_FONT_SIZE_RATIO, MIN_FONT_SIZE_RATIO, AppConfig
 from .ocr import Box
-from .overlay import (MAX_TEXT_WIDTH_RATIO, beside_original_position, blend, centered_position, cover_box, render_subtitle,
-                      subtitle_position)
+from .overlay import (MAX_TEXT_WIDTH_RATIO, beside_original_position, blend, centered_position, cover_box,
+                      hex_to_rgb, render_subtitle, subtitle_position)
 
 FONT_STEP = 0.002
 MIN_FONT_PX = 12
@@ -73,7 +73,8 @@ class SubtitleLayer:
         # Az angol szöveget teljesen takarjuk, akármilyen átlátszó a magyar panel
         output = cover_box(frame, shown.anchor, ORIGINAL_COVER_OPACITY) if hide_original else frame
         rendered = render_subtitle(shown.text, self._config.font_path, font_size,
-                                   int(width * MAX_TEXT_WIDTH_RATIO), (0, 0), self._config.panel_opacity)
+                                   int(width * MAX_TEXT_WIDTH_RATIO), (0, 0), self._config.panel_opacity,
+                                   hex_to_rgb(self._config.speaker_color))
         x, y = centered_position(rendered, center[0], center[1], width, height)
         return self._finish(output, rendered, x, y)
 
@@ -86,7 +87,8 @@ class SubtitleLayer:
         else:
             min_panel = (0, 0)
         rendered = render_subtitle(shown.text, self._config.font_path, font_size,
-                                   int(width * MAX_TEXT_WIDTH_RATIO), min_panel, self._config.panel_opacity)
+                                   int(width * MAX_TEXT_WIDTH_RATIO), min_panel, self._config.panel_opacity,
+                                   hex_to_rgb(self._config.speaker_color))
         if hide_original:
             x, y = subtitle_position(rendered, anchor, width, height)
         else:

@@ -1,6 +1,7 @@
 """Beállítások betöltése és ellenőrzése (config.json)."""
 
 import json
+import re
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 
@@ -9,7 +10,13 @@ DEFAULT_CLAUDE_MODEL = "claude-haiku-5-5"
 DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
 MIN_FONT_SIZE_RATIO = 0.015
 MAX_FONT_SIZE_RATIO = 0.08
-DEFAULT_FONT_PATH = "C:/Windows/Fonts/segoeuib.ttf"
+# Vékony (a GTA-feliratokhoz hasonló) és félkövér betű; a panelen váltható
+THIN_FONT_PATH = "C:/Windows/Fonts/segoeui.ttf"
+BOLD_FONT_PATH = "C:/Windows/Fonts/segoeuib.ttf"
+DEFAULT_FONT_PATH = THIN_FONT_PATH
+# A beszélő nevének színe, mint a GTA-ban („Locals:” világos türkiz)
+DEFAULT_SPEAKER_COLOR = "#7ECFD6"
+HEX_COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
 MIN_WEBCAM_WIDTH_RATIO = 0.05
 MAX_WEBCAM_WIDTH_RATIO = 0.5
 
@@ -59,6 +66,7 @@ class AppConfig:
     subtitle_y: float | None = None
     font_path: str = DEFAULT_FONT_PATH
     font_size_ratio: float = 0.034
+    speaker_color: str = DEFAULT_SPEAKER_COLOR  # "#RRGGBB"
     fullscreen: bool = True
     webcam_device_index: int | None = None
     webcam_x: float = 0.02
@@ -90,6 +98,8 @@ class AppConfig:
             raise ConfigError(f"font_size_ratio {MIN_FONT_SIZE_RATIO} és {MAX_FONT_SIZE_RATIO} közé essen")
         if not 0 <= self.panel_opacity <= 255:
             raise ConfigError("panel_opacity 0 és 255 közé essen")
+        if not isinstance(self.speaker_color, str) or not HEX_COLOR_PATTERN.match(self.speaker_color):
+            raise ConfigError('speaker_color "#RRGGBB" alakú szín legyen, pl. "#7ECFD6"')
         if (self.subtitle_x is None) != (self.subtitle_y is None):
             raise ConfigError("subtitle_x és subtitle_y vagy mindkettő null, vagy mindkettő szám")
         if self.subtitle_x is not None and not (0.0 <= self.subtitle_x <= 1.0 and 0.0 <= self.subtitle_y <= 1.0):

@@ -5,6 +5,7 @@ rajzoljuk egy átlátszó képre, egyszer szövegenként, és csak azt keverjük
 minden képkockára.
 """
 
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -17,10 +18,16 @@ MAX_TEXT_WIDTH_RATIO = 0.62
 PANEL_PADDING_RATIO = 0.6
 PANEL_ALPHA = 245
 LINE_SPACING_RATIO = 0.25
-OUTLINE_RATIO = 0.08
+# GTA-stílus: vékony körvonal és halvány, kissé eltolt árnyék a vastag fekete keret helyett
+OUTLINE_RATIO = 0.04
+SHADOW_OFFSET_RATIO = 0.06
 TEXT_COLOR = (255, 255, 255, 255)
 OUTLINE_COLOR = (0, 0, 0, 255)
+SHADOW_COLOR = (0, 0, 0, 170)
 PANEL_COLOR = (10, 10, 10)
+MAX_SPEAKER_WORDS = 3
+# Sor eleji beszélőnév: „Locals:” → a név színes, a kettősponttól fehér
+_SPEAKER_NAME = re.compile(r"^([^\W\d_](?:[^\W\d_]|[ .'-]){0,30}):\s")
 
 
 @dataclass(frozen=True)
@@ -67,9 +74,40 @@ def _load_font(path: str, size: int) -> ImageFont.FreeTypeFont:
         return ImageFont.load_default(size)
 
 
+def hex_to_rgb(color: str) -> tuple[int, int, int]:
+    """„#7ECFD6” → (126, 207, 214)."""
+    value = color.lstrip("#")
+    return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
+
+
+def _speaker_split(line: str) -> tuple[str, str]:
+    """(név, maradék) a sor elejéről; ('', sor), ha nem beszélővel kezdődik."""
+    match = _SPEAKER_NAME.match(line)
+    if not match or not line[0].isupper() or len(match.group(1).split()) > MAX_SPEAKER_WORDS:
+        return "", line
+    return match.group(1), line[len(match.group(1)):]
+
+
+def _draw_line(draw: ImageDraw.ImageDraw, position: tuple[float, int], line: str,
+               font: ImageFont.FreeTypeFont, speaker_color: tuple[int, int, int] | None) -> None:
+    """Árnyék, majd a szöveg; a beszélő neve speaker_color színű, a többi fehér."""
+    x, y = position
+    size = font.size
+    outline = max(1, int(size * OUTLINE_RATIO))
+    shadow = max(1, int(size * SHADOW_OFFSET_RATIO))
+    draw.text((x + shadow, y + shadow), line, font=font, fill=SHADOW_COLOR)
+    name, rest = _speaker_split(line) if speaker_color else ("", line)
+    if name:
+        draw.text((x, y), name, font=font, fill=speaker_color + (255,),
+                  stroke_width=outline, stroke_fill=OUTLINE_COLOR)
+        x += font.getlength(name)
+    draw.text((x, y), rest, font=font, fill=TEXT_COLOR, stroke_width=outline, stroke_fill=OUTLINE_COLOR)
+
+
 @lru_cache(maxsize=64)
 def render_subtitle(text: str, font_path: str, font_size: int, max_width: int,
-                    min_panel: tuple[int, int] = (0, 0), opacity: int = PANEL_ALPHA) -> RenderedSubtitle:
+                    min_panel: tuple[int, int] = (0, 0), opacity: int = PANEL_ALPHA,
+                    speaker_color: tuple[int, int, int] | None = None) -> RenderedSubtitle:
     """Kirajzolja a szöveget egy sötét panelre; min_panel = (szél, mag) eltakarandó terület."""
     font = _load_font(font_path, font_size)
     lines = wrap_text(text, font, max_width) or [""]
@@ -80,13 +118,10 @@ def render_subtitle(text: str, font_path: str, font_size: int, max_width: int,
     height = max(line_height * len(lines) + padding, min_panel[1])
     image = Image.new("RGBA", (width, height), PANEL_COLOR + (opacity,))
     draw = ImageDraw.Draw(image)
-    outline = max(1, int(font_size * OUTLINE_RATIO))
     top = (height - line_height * len(lines)) // 2
     for index, line in enumerate(lines):
         x = (width - font.getlength(line)) / 2
-        y = top + index * line_height
-        draw.text((x, y), line, font=font, fill=TEXT_COLOR,
-                  stroke_width=outline, stroke_fill=OUTLINE_COLOR)
+        _draw_line(draw, (x, top + index * line_height), line, font, speaker_color)
     return RenderedSubtitle(rgba=np.asarray(image))
 
 
