@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Helyi adatok: a mentett fordítások és az ideiglenes írási fájlok
+mentett_forditasok.json
+*.tmp
+.env

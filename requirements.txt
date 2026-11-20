@@ -1,0 +1,8 @@
+rapidocr==3.10.0
+onnxruntime==1.32.0
+opencv-python==5.1.0.95
+pillow==13.0.0
+numpy==2.5.5
+deep-translator==1.11.4
+mss==10.2.0
+requests==2.34.2
