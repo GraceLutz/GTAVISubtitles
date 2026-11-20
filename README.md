@@ -15,6 +15,32 @@ PS5 ──hálózat──▶ PS Remote Play ablak a PC-n ◀── átlátszó f
 Capture card nélkül is működik: **PS Remote Play módban** a program a Remote Play
 ablak fölé tesz egy átlátszó réteget, lásd [PS Remote Play mód](#ps-remote-play-mód).
 
+## Letöltés streamereknek
+
+Python és telepítés nélkül, egy kattintással:
+
+**[⬇ GTA6Felirat-win64.zip letöltése](https://github.com/GraceLutz/GTAVISubtitles/releases/latest/download/GTA6Felirat-win64.zip)**
+(vagy a [Releases](https://github.com/GraceLutz/GTAVISubtitles/releases) oldalról)
+
+1. Csomagold ki a zipet, és indítsd el a PS Remote Playt (csatlakozz a konzolhoz).
+2. Dupla kattintás a `GTA6Felirat\GTA6Felirat.exe`-re. Alapból Remote Play módban
+   indul; a felirat a Medal/OBS monitorfelvételen és a streamen is látszik.
+3. Ha a SmartScreen figyelmeztet: *További információ → Futtatás mindenképp*
+   (az exe nincs digitálisan aláírva).
+
+Az API-kulcsot a beállítóablakban kell megadni; a Windows Hitelesítőadat-kezelője
+tárolja, nem kerül a mappába. A `config.json` az exe mellett van. Az összes
+[kapcsoló](#parancssori-kapcsolók) működik, pl. `GTA6Felirat.exe --lang de` vagy
+capture carddal `GTA6Felirat.exe --device 1`.
+
+A csomag elkészítése (fejlesztőknek, a `.venv` már létezzen):
+
+```powershell
+.\build_exe.ps1
+```
+
+Eredmény: `dist\GTA6Felirat\` és `dist\GTA6Felirat-win64.zip`.
+
 ## Amire szükség van
 
 | Mi | Megjegyzés |

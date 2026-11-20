@@ -1,8 +1,13 @@
-"""Indítás: python -m gta_felirat [--device N] [--lang de] [--translator claude] [--image kép.png]"""
+"""Indítás: python -m gta_felirat [--device N] [--lang de] [--translator claude] [--image kép.png]
+
+A csomagolt exe (GTA6Felirat.exe) ugyanezt a belépési pontot használja (run_exe): forrás
+megadása nélkül Remote Play módban indul, a config.json pedig az exe mellett van.
+"""
 
 import argparse
 import logging
 import sys
+import traceback
 from pathlib import Path
 
 import cv2
@@ -12,15 +17,35 @@ from .capture import CaptureError, FrameGrabber, list_devices, open_device
 from .config import SUPPORTED_TRANSLATORS, ConfigError, load_config, with_overrides
 from .ocr import SubtitleReader
 
-DEFAULT_CONFIG = Path("config.json")
+CONFIG_FILE_NAME = "config.json"
 WEBCAM_WIDTH = 1280
 WEBCAM_HEIGHT = 720
 WEBCAM_FPS = 30
+# Ha ezek egyike sincs megadva, az exe Remote Play módban indul
+EXPLICIT_SOURCE_FLAGS = ("--remote-play", "--window", "--device", "--image", "--list-devices", "-h", "--help")
+
+
+def is_frozen() -> bool:
+    """PyInstallerrel csomagolt exe-ként fut-e."""
+    return bool(getattr(sys, "frozen", False))
+
+
+def default_config_path() -> Path:
+    # Az exe bárhonnan indítható (parancsikon, más munkakönyvtár): a beállítás mindig mellette legyen
+    if is_frozen():
+        return Path(sys.executable).resolve().parent / CONFIG_FILE_NAME
+    return Path(CONFIG_FILE_NAME)
+
+
+def with_exe_defaults(argv: list[str]) -> list[str]:
+    """Streamereknek nincs capture card: forrás megadása nélkül Remote Play módban indulunk."""
+    has_source = any(arg.split("=", 1)[0] in EXPLICIT_SOURCE_FLAGS for arg in argv)
+    return list(argv) if has_source else ["--remote-play", *argv]
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="gta_felirat", description="Lefordított feliratpanel capture cardhoz vagy PS Remote Playhez")
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG, help="beállításfájl (config.json)")
+    parser.add_argument("--config", type=Path, default=default_config_path(), help="beállításfájl (config.json)")
     parser.add_argument("--device", type=int, help="capture card sorszáma (lásd --list-devices)")
     parser.add_argument("--remote-play", action="store_true",
                         help="PS Remote Play ablak fölé teszi a feliratot (nem kell capture card)")
@@ -113,6 +138,28 @@ def main(argv: list[str] | None = None) -> int:
     OverlayApp(config, source, reader, webcam=webcam, config_path=args.config,
                settings_window=not args.no_panel).run()
     return 0
+
+
+def _wait_before_closing() -> None:
+    # Dupla kattintással indítva a konzolablak hiba után azonnal bezárulna, el sem olvasható
+    if sys.stdin is None or not sys.stdin.isatty():
+        return
+    try:
+        input("\nNyomj Entert a bezáráshoz...")
+    except EOFError:
+        pass  # nincs olvasható bemenet (pl. átirányított indítás): nincs mire várni
+
+
+def run_exe() -> int:
+    """A csomagolt exe belépési pontja: Remote Play az alapmód, és hiba után nyitva marad az ablak."""
+    try:
+        code = main(with_exe_defaults(sys.argv[1:]))
+    except Exception:  # noqa: BLE001 - váratlan hibánál is látszódjon az ok, ne csak villanjon az ablak
+        traceback.print_exc()
+        code = 1
+    if code:
+        _wait_before_closing()
+    return code
 
 
 if __name__ == "__main__":
