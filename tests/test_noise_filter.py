@@ -69,3 +69,25 @@ def test_console_menu_text_in_other_language_is_not_a_subtitle(text):
 ])
 def test_english_lines_with_an_occasional_accent_are_kept(text):
     assert looks_like_subtitle(text)
+
+
+@pytest.mark.parametrize("text", [
+    "Focus +10% SMALL SALTW",
+    "Strength -10% Stamina bonus",
+    "+$250 Cash received from mission",
+    "Shooting skill +1 LEVEL UP",
+    "Focus SMALL SALTW BONUS",
+])
+def test_hud_stat_notifications_are_noise(text):
+    assert not looks_like_subtitle(text)
+
+
+@pytest.mark.parametrize("text", [
+    "I want 50% of the cut.",
+    "Get the FIB files out of here",
+    "We need 10 more minutes, okay?",
+    "Lucia: Give me +10% or walk.",
+    "Jason: The LSPD is coming!",
+])
+def test_dialogue_with_numbers_or_acronyms_is_kept(text):
+    assert looks_like_subtitle(text)

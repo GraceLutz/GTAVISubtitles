@@ -20,6 +20,11 @@ MAX_ICON_CHARS = 2  # gomb-ikon vagy HUD-maradék a mondat után: „8”, „C8
 # Ha a szavak ennyi része ékezetes, az nem angol felirat (pl. a PS5 magyar menüje)
 MAX_ACCENTED_WORD_RATIO = 0.4
 LATIN_SCRIPT_LIMIT = 0x24F  # a Latin bővített-B blokk vége: fölötte nem angol betű
+# HUD-értesítés jele: előjeles érték- vagy képességváltozás („Focus +10%”, „-5”, „+$250”)
+STAT_CHANGE_TOKEN = re.compile(r"^[+\-−]\$?\d+(?:[.,]\d+)?%?$")
+# HUD-értesítés jele: a szavak többsége csupa nagybetűs („Focus SMALL SALTW BONUS”)
+MIN_SHOUTED_WORD_LETTERS = 2  # az „I” és az „A” nem számít
+MAX_SHOUTED_WORD_RATIO = 0.5
 # Beszélő neve: csak betűk (számjegy nem, így a hívás-időzítő „Jason 00:04” nem beszélő)
 SPEAKER_PATTERN = re.compile(r"^[A-Z](?:[^\W\d_]|[ .'-]){0,30}:\s*\S")
 # A telefonhívás kijelzője a sor végén: „… alright? Jason 00:05 D”
@@ -135,6 +140,18 @@ def is_mostly_accented(text: str) -> bool:
     return accented / len(words) >= MAX_ACCENTED_WORD_RATIO
 
 
+def is_hud_notification(text: str) -> bool:
+    """Képesség-/értékváltozás vagy nagybetűs HUD-értesítés, ami a feliratsávba lóg."""
+    tokens = text.split()
+    if any(STAT_CHANGE_TOKEN.match(token) for token in tokens):
+        return True
+    words = [token for token in tokens if sum(ch.isalpha() for ch in token) >= MIN_SHOUTED_WORD_LETTERS]
+    if not words:
+        return False
+    shouted = sum(all(ch.isupper() for ch in word if ch.isalpha()) for word in words)
+    return shouted / len(words) > MAX_SHOUTED_WORD_RATIO
+
+
 def looks_like_subtitle(text: str) -> bool:
     """Igaz, ha a szöveg angol feliratsornak tűnik, nem HUD-töredéknek, táblának vagy menünek."""
     text = text.strip()
@@ -143,6 +160,8 @@ def looks_like_subtitle(text: str) -> bool:
     letters = sum(ch.isalpha() for ch in text)
     if SPEAKER_PATTERN.match(text):
         return True
+    if is_hud_notification(text):
+        return False  # a „Név:” nélküli sorban: játékértesítés, nem párbeszéd
     if letters and all(ch.isupper() for ch in text if ch.isalpha()):
         return False  # csupa nagybetű: tábla vagy HUD-felirat, nem párbeszéd
     if text.endswith(SENTENCE_END):
