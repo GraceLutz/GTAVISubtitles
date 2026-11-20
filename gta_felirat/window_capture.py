@@ -15,6 +15,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .ocr import Box
+
 DPI_AWARENESS_PER_MONITOR = 2
 GA_ROOT = 2
 # Ilyen sűrű rácson nézzük meg, mi van legfelül a feliratsávban (egy keskeny csík se csússzon át)
@@ -86,6 +88,23 @@ def client_rect(hwnd: int) -> ScreenRect | None:
 
 def window_exists(hwnd: int) -> bool:
     return bool(ctypes.windll.user32.IsWindow(hwnd))
+
+
+def blank_out(band: np.ndarray, band_area: Box, box: Box, margin: int) -> np.ndarray:
+    """A sávképen feketére festi a saját kirajzolt fordításunk helyét (árnyékkal, körvonallal együtt).
+
+    Ha a réteg látszik a képrögzítésben (Medal, OBS), az OCR enélkül visszaolvasná a magyar szöveget.
+    band_area és box ugyanabban (a Remote Play ablak) koordináta-rendszerben van. Új képet ad vissza.
+    """
+    left = max(box.left - margin, band_area.left) - band_area.left
+    top = max(box.top - margin, band_area.top) - band_area.top
+    right = min(box.right + margin, band_area.right) - band_area.left
+    bottom = min(box.bottom + margin, band_area.bottom) - band_area.top
+    if right <= left or bottom <= top:
+        return band
+    result = band.copy()
+    result[top:bottom, left:right] = 0
+    return result
 
 
 def band_sample_points(rect: ScreenRect) -> list[tuple[int, int]]:

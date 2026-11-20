@@ -69,8 +69,28 @@ a PS5-höz, kapcsold be a feliratokat a játékban, majd:
 - A beállítóablakban a *„Mintaszöveg és a figyelt sáv mutatása”* jelölőnégyzet
   mutatja, hol keresi a program az angol feliratot.
 - **Kilépés:** zárd be a beállítóablakot. Ha a Remote Playt zárod be, a program is kilép.
-- A réteg kimarad a képrögzítésből (Windows 10 2004 vagy újabb), így a program
-  mindig az eredeti angol feliratot olvassa, nem a saját fordítását.
+- A magyar felirat alapból **látszik a felvételeken és streamen** (lásd lent). A program
+  a saját kirajzolt fordítását minden olvasás előtt kitakarja, így mindig az eredeti
+  angol feliratot olvassa.
+
+### Felvétel és stream (Medal, OBS → Twitch, Kick, YouTube)
+
+A feliratréteg egy külön ablak a Remote Play fölött, ezért a rögzítőprogramban a
+**monitort** kell felvenni, ne csak a Remote Play ablakot vagy játékot:
+
+| Program | Beállítás |
+|---|---|
+| **Medal** | Capture mode: *Monitor / Full screen* azon a monitoron, ahol a Remote Play fut |
+| **OBS** (Twitch, Kick, YouTube) | Forrás: *Képernyő-felvétel* (Display Capture) a kijelölt monitorra |
+| **Xbox Game Bar, NVIDIA ShadowPlay** | teljes asztal / monitor rögzítése |
+
+A panel „Látszódjon a felvételen és streamen” kapcsolójával ki is kapcsolhatod: ekkor a
+felirat csak neked látszik, a felvételen nem (Windows 10 2004 vagy újabb kell hozzá).
+Felvételre látszó módban az „angol felirat eltakarása” nem érvényes: a fordítás az angol
+alá kerül, mert a takarást az OCR is látná.
+
+**Streamereknek:** a program a GitHubról letölthető, a telepítés lépései fent vannak. Mindenki a
+saját fordítókulcsát adja meg a panelen (DeepL ingyenes kulcs is elég).
 
 Más ablak fölé is teheted (pl. Xbox alkalmazás, böngészős felhőjáték), az ablak
 pontos címével:
@@ -218,6 +238,7 @@ Az overlay ablak csak képet mutat. A hanghoz válassz egyet:
 | `claude_model` | `"claude-haiku-5-5"` | Claude-modell |
 | `openai_model` | `"gpt-4.1-mini"` | GPT-modell |
 | `hide_original` | `true` | az angol szöveg takarása |
+| `visible_in_recordings` | `true` | a felirat látszik a Medal/OBS monitorfelvételen és streamen |
 | `only_spoken_lines` | `true` | csak a „Név: szöveg” párbeszédsorok fordítása |
 | `panel_opacity` | `245` | a panel háttere, 0 (átlátszó) – 255 (teljesen fedő) |
 | `subtitle_x` / `subtitle_y` | `null` | a panel közepe a kép arányában; `null` = az angol felirat helyén |

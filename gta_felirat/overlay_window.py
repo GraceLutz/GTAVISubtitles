@@ -4,8 +4,9 @@
   rajtuk, így a Remote Play kapja meg az egeret.
 - Maga a feliratpanel megfogható: húzható, görgethető, jobb klikkel visszaáll.
 - WS_EX_NOACTIVATE: a panelre kattintás nem veszi el a fókuszt a Remote Playtől.
-- WDA_EXCLUDEFROMCAPTURE: a réteg kimarad a képrögzítésből, így az OCR az eredeti
-  angol feliratot látja, nem a saját fordításunkat.
+- Alapból a réteg látszik a képrögzítésben (Medal, OBS); az OCR a saját fordításunk
+  helyét kitakarja (window_capture.blank_out). Ha ki van kapcsolva, WDA_EXCLUDEFROMCAPTURE:
+  ekkor a felvételeken sem látszik.
 """
 
 import ctypes
@@ -27,6 +28,7 @@ OUTLINE_PX = 2
 GWL_EXSTYLE = -20
 WS_EX_TOOLWINDOW = 0x00000080
 WS_EX_NOACTIVATE = 0x08000000
+WDA_NONE = 0x00000000
 WDA_EXCLUDEFROMCAPTURE = 0x00000011
 WHEEL_SHIFT = 16
 
@@ -34,8 +36,9 @@ logger = logging.getLogger(__name__)
 
 
 class OverlayWindow:
-    def __init__(self, root: tk.Tk, layer: SubtitleLayer) -> None:
+    def __init__(self, root: tk.Tk, layer: SubtitleLayer, capture_visible: bool = True) -> None:
         self._layer = layer
+        self._capture_visible = capture_visible
         self._rect: ScreenRect | None = None
         self._base: np.ndarray | None = None
         self._photo: ImageTk.PhotoImage | None = None
@@ -90,9 +93,21 @@ class OverlayWindow:
         hwnd = self.hwnd
         style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
         user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW)
-        if not user32.SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE):
-            # Régebbi Windowson nincs ilyen; ekkor a pipeline szűri ki a saját szövegünket
-            logger.warning("A réteget nem sikerült kizárni a képrögzítésből (Windows 10 2004+ kell)")
+        self._apply_capture_affinity()
+
+    def set_capture_visible(self, visible: bool) -> None:
+        """Látszódjon-e a réteg a felvételeken és streamen (Medal, OBS)."""
+        if visible == self._capture_visible:
+            return
+        self._capture_visible = visible
+        if self._styled:
+            self._apply_capture_affinity()
+
+    def _apply_capture_affinity(self) -> None:
+        affinity = WDA_NONE if self._capture_visible else WDA_EXCLUDEFROMCAPTURE
+        if not ctypes.windll.user32.SetWindowDisplayAffinity(self.hwnd, affinity):
+            # Régebbi Windowson nincs kizárás; ekkor a saját szövegünk helyét az OCR kitakarja
+            logger.warning("A réteg rögzíthetőségét nem sikerült beállítani (Windows 10 2004+ kell)")
 
     # --- rajzolás ---------------------------------------------------------
     def render(self, shown: Shown | None, hide_original: bool, preview_region: Box | None) -> None:

@@ -99,6 +99,7 @@ class SettingsWindow:
         self._hide_original = tk.BooleanVar()
         self._only_spoken = tk.BooleanVar()
         self._thin_font = tk.BooleanVar()
+        self._visible_in_recordings = tk.BooleanVar()
         ttk.Separator(frame).grid(row=6, column=0, columnspan=3, sticky="ew", pady=10)
         ttk.Label(frame, text="Betűméret").grid(row=7, column=0, sticky="w")
         font_scale = tk.Scale(frame, variable=self._font, orient="horizontal", length=220,
@@ -122,6 +123,10 @@ class SettingsWindow:
                         command=lambda: self._change(
                             {"font_path": THIN_FONT_PATH if self._thin_font.get() else BOLD_FONT_PATH})
                         ).grid(row=14, column=0, columnspan=3, sticky="w")
+        ttk.Checkbutton(frame, text="Látszódjon a felvételen és streamen (Medal, OBS, Twitch, Kick, YouTube)",
+                        variable=self._visible_in_recordings,
+                        command=lambda: self._change({"visible_in_recordings": self._visible_in_recordings.get()})
+                        ).grid(row=15, column=0, columnspan=3, sticky="w")
         ttk.Button(frame, text="Panel vissza az angol felirat helyére",
                    command=lambda: self._change({"subtitle_x": None, "subtitle_y": None})
                    ).grid(row=10, column=1, columnspan=2, sticky="w", pady=(4, 0))
@@ -183,6 +188,7 @@ class SettingsWindow:
             self._hide_original.set(config.hide_original)
             self._only_spoken.set(config.only_spoken_lines)
             self._thin_font.set(config.font_path == THIN_FONT_PATH)
+            self._visible_in_recordings.set(config.visible_in_recordings)
             field_name = AI_MODEL_FIELDS.get(config.translator)
             self._model.set(getattr(config, field_name) if field_name else "")
             self._model_entry.configure(state="normal" if field_name else "disabled")
