@@ -17,12 +17,14 @@ import cv2
 import numpy as np
 from PIL import Image, ImageTk
 
+from .frosted_cover import Backdrop
 from .ocr import Box
 from .subtitle_layer import Shown, SubtitleLayer
 from .window_capture import ScreenRect
 
 KEY_COLOR_RGB = (1, 2, 3)  # majdnem fekete: a betűk élsimítása sem ad színes szegélyt
 KEY_COLOR_HEX = "#010203"
+KEY_COLOR_BGR = KEY_COLOR_RGB[::-1]
 REGION_COLOR = (0, 200, 255)
 OUTLINE_PX = 2
 GWL_EXSTYLE = -20
@@ -33,6 +35,17 @@ WDA_EXCLUDEFROMCAPTURE = 0x00000011
 WHEEL_SHIFT = 16
 
 logger = logging.getLogger(__name__)
+
+
+def protect_from_key(frame: np.ndarray, box: Box) -> np.ndarray:
+    """A takarásban a véletlenül kulcsszínű pixelek feketék lesznek, hogy ne lásson át rajtuk az angol szöveg."""
+    region = frame[box.top:box.bottom, box.left:box.right]
+    is_key = cv2.inRange(region, KEY_COLOR_BGR, KEY_COLOR_BGR)  # gyors, ~25× a numpy-összehasonlításnál
+    if not cv2.countNonZero(is_key):
+        return frame
+    result = frame.copy()
+    result[box.top:box.bottom, box.left:box.right][is_key > 0] = 0
+    return result
 
 
 class OverlayWindow:
@@ -63,7 +76,7 @@ class OverlayWindow:
             self._rect = rect
             self._window.geometry(f"{rect.width}x{rect.height}+{rect.left}+{rect.top}")
             self._base = np.empty((rect.height, rect.width, 3), np.uint8)
-            self._base[:] = KEY_COLOR_RGB[::-1]  # BGR
+            self._base[:] = KEY_COLOR_BGR
             self.needs_redraw = True
         if not self._visible:
             self._window.deiconify()
@@ -110,17 +123,20 @@ class OverlayWindow:
             logger.warning("A réteg rögzíthetőségét nem sikerült beállítani (Windows 10 2004+ kell)")
 
     # --- rajzolás ---------------------------------------------------------
-    def render(self, shown: Shown | None, hide_original: bool, preview_region: Box | None) -> None:
+    def render(self, shown: Shown | None, hide_original: bool, preview_region: Box | None,
+               backdrop: Backdrop | None = None) -> None:
         """Csak a panelt (és a takarást) tartalmazó sávot rajzolja újra: néhány ms a teljes ablak helyett."""
         if self._base is None:
             return
         self.needs_redraw = False
-        frame = self._layer.draw(self._base, shown, hide_original, preview_region)
+        frame = self._layer.draw(self._base, shown, hide_original, preview_region, backdrop)
+        if self._layer.last_cover is not None:
+            frame = protect_from_key(frame, self._layer.last_cover)
         if preview_region is not None:
             frame = frame.copy() if frame is self._base else frame
             cv2.rectangle(frame, (preview_region.left, preview_region.top),
                           (preview_region.right, preview_region.bottom), REGION_COLOR, 2)
-        dirty = self._dirty_box(shown, hide_original, preview_region, frame.shape)
+        dirty = self._dirty_box(preview_region, frame.shape)
         if dirty is None:
             self._canvas.itemconfigure(self._image_item, state="hidden")
             return
@@ -129,14 +145,13 @@ class OverlayWindow:
         self._canvas.coords(self._image_item, dirty.left, dirty.top)
         self._canvas.itemconfigure(self._image_item, image=self._photo, state="normal")
 
-    def _dirty_box(self, shown: Shown | None, hide_original: bool, preview_region: Box | None,
-                   shape: tuple[int, ...]) -> Box | None:
+    def _dirty_box(self, preview_region: Box | None, shape: tuple[int, ...]) -> Box | None:
         boxes = []
         if self._layer.last_rect is not None:
             x, y, width, height = self._layer.last_rect
             boxes.append(Box(x, y, x + width, y + height))
-        if shown is not None and hide_original:
-            boxes.append(shown.anchor)
+        if self._layer.last_cover is not None:
+            boxes.append(self._layer.last_cover)
         if preview_region is not None:
             boxes.append(Box(preview_region.left - OUTLINE_PX, preview_region.top - OUTLINE_PX,
                              preview_region.right + OUTLINE_PX, preview_region.bottom + OUTLINE_PX))

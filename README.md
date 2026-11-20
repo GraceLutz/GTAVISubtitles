@@ -104,8 +104,11 @@ a PS5-höz, kapcsold be a feliratokat a játékban, majd:
   mutatja, hol keresi a program az angol feliratot.
 - **Kilépés:** zárd be a beállítóablakot. Ha a Remote Playt zárod be, a program is kilép.
 - A magyar felirat alapból **látszik a felvételeken és streamen** (lásd lent). A program
-  a saját kirajzolt fordítását minden olvasás előtt kitakarja, így mindig az eredeti
-  angol feliratot olvassa.
+  közvetlenül a Remote Play ablak tartalmát olvassa (a fölötte lévő réteg nélkül), így
+  mindig az eredeti angol feliratot látja, akkor is, ha a réteg letakarja.
+- Az **angol felirat eltakarása** bekapcsolva (`h` gomb vagy a beállítóablak) az angol
+  szöveg helyére a játékkép elmosott, kissé sötétített, lágy szélű változata kerül, rajta a
+  fordítással. Ez a felvételen és a streamen is így látszik.
 
 ### Felvétel és stream (Medal, OBS → Twitch, Kick, YouTube)
 
@@ -120,8 +123,9 @@ A feliratréteg egy külön ablak a Remote Play fölött, ezért a rögzítőpro
 
 A panel „Látszódjon a felvételen és streamen” kapcsolójával ki is kapcsolhatod: ekkor a
 felirat csak neked látszik, a felvételen nem (Windows 10 2004 vagy újabb kell hozzá).
-Felvételre látszó módban az „angol felirat eltakarása” nem érvényes: a fordítás az angol
-alá kerül, mert a takarást az OCR is látná.
+Ha a Remote Play ablak tartalma valamiért nem rögzíthető (a program ilyenkor figyelmeztet
+és a képernyőről olvas tovább), felvételre látszó módban az „angol felirat eltakarása” nem
+érvényes: a fordítás az angol alá kerül, mert a takarást az OCR is látná.
 
 **Streamereknek:** a program a GitHubról letölthető, a telepítés lépései fent vannak. Mindenki a
 saját fordítókulcsát adja meg a panelen (DeepL ingyenes kulcs is elég).
@@ -149,7 +153,8 @@ hozzá, mert a felirat ugyanahhoz a képhez igazodik.
 | Jobb klikk a panelen | vissza az angol felirat helyére |
 | `r` gomb | mintaszöveg, ha épp nincs felirat (így be tudod állítani) |
 
-Ha máshová húzod a panelt, az eredeti angol szöveget egy sötét doboz takarja
+Ha az angol felirat eltakarása be van kapcsolva, az eredeti angol szöveget a játékkép
+elmosott, lágy szélű változata takarja, akkor is, ha a panelt máshová húzod
 (a `h` gombbal kikapcsolható).
 
 **A beállítóablakban** (a `p` gombbal elrejthető vagy előhozható):

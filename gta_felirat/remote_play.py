@@ -9,7 +9,9 @@ import time
 from pathlib import Path
 
 from .app_base import SubtitleAppBase
+from .band_capture import BandCapture, WindowContentGrabber
 from .config import AppConfig
+from .frosted_cover import Backdrop
 from .ocr import SubtitleReader, region_to_box
 from .overlay_window import OverlayWindow
 from .translator import CachedTranslator
@@ -32,6 +34,10 @@ class RemotePlayApp(SubtitleAppBase):
         super().__init__(config, reader, translator, config_path)
         self._hwnd = find_window(window_title)
         self._grabber = ScreenGrabber()
+        # Elsőként a Remote Play ablak saját tartalmát olvassuk: abban nincs benne a feliratréteg
+        self._capture = BandCapture(WindowContentGrabber(self._hwnd), self._grabber)
+        self._backdrop: Backdrop | None = None  # az OCR-szál írja: a legutóbbi takarás nélküli sáv
+        self._drawn_backdrop: Backdrop | None = None
         self._preview = False
         self._next_keep_on_top = 0.0
         self._running = True
@@ -91,9 +97,14 @@ class RemotePlayApp(SubtitleAppBase):
             self._submit_subtitle_band(rect, now)
         if self._pipeline.poll(now):
             self._overlay.needs_redraw = True
+        hide_original = effective_hide_original(self._config, ocr_sees_overlay=not self._capture.uses_window_content)
+        backdrop = self._backdrop if hide_original else None
+        if backdrop is not self._drawn_backdrop and self._pipeline.shown is not None:
+            self._overlay.needs_redraw = True  # a takarás kövesse a mozgó játékképet
         if self._overlay.needs_redraw:
             preview = region_to_box(self._config.subtitle_region, rect.width, rect.height) if self._preview else None
-            self._overlay.render(self._pipeline.shown, effective_hide_original(self._config), preview)
+            self._overlay.render(self._pipeline.shown, hide_original, preview, backdrop)
+            self._drawn_backdrop = backdrop
         self._translation.keep_warm()
         if now >= self._next_keep_on_top:
             self._next_keep_on_top = now + KEEP_ON_TOP_SECONDS
@@ -105,7 +116,9 @@ class RemotePlayApp(SubtitleAppBase):
         if area.width <= 0 or area.height <= 0:
             return
         band_rect = ScreenRect(rect.left + area.left, rect.top + area.top, area.width, area.height)
-        covered = not is_unobstructed(band_rect, {self._hwnd, self._overlay.hwnd})
+        # Az ablak saját tartalmát a fölé húzott ablakok sem zavarják; csak képernyőről olvasva kell nézni
+        covered = (not self._capture.uses_window_content
+                   and not is_unobstructed(band_rect, {self._hwnd, self._overlay.hwnd}))
         if covered != self._band_covered:
             self._band_covered = covered
             logger.info("A feliratsávot %s", "másik ablak takarja, nem olvasom" if covered else "újra látom")
@@ -119,7 +132,10 @@ class RemotePlayApp(SubtitleAppBase):
 
     def _grab_band(self, band_rect: ScreenRect, area: Box, own_text: Box | None):
         """Az OCR-szálon fut: rögzít, és ha kell, kitakarja a saját kirajzolt fordításunkat."""
-        band = self._grabber.grab(band_rect)
+        band = self._capture.grab(band_rect, area)
+        if self._capture.last_from_window:
+            self._backdrop = Backdrop(band, area)  # ebből készül az angol szöveg elmosott takarása
+            return band
         return band if own_text is None else blank_out(band, area, own_text, OWN_TEXT_MARGIN_PX)
 
     def _own_text_box(self) -> Box | None:
@@ -130,6 +146,9 @@ class RemotePlayApp(SubtitleAppBase):
         return Box(x, y, x + width, y + height)
 
 
-def effective_hide_original(config: AppConfig) -> bool:
-    """Felvételre látszó rétegnél az angolt nem takarjuk: a takarást az OCR is látná, és nem olvasna semmit."""
-    return config.hide_original and not config.visible_in_recordings
+def effective_hide_original(config: AppConfig, ocr_sees_overlay: bool = True) -> bool:
+    """Az angolt csak akkor takarhatjuk, ha az OCR nem látja a takarást (különben semmit sem olvasna).
+
+    Az OCR akkor látja a réteget, ha a képernyőről olvas és a réteg a felvételen is látszik.
+    """
+    return config.hide_original and not (config.visible_in_recordings and ocr_sees_overlay)

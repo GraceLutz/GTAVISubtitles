@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 
 from .config import MAX_FONT_SIZE_RATIO, MIN_FONT_SIZE_RATIO, AppConfig
+from .frosted_cover import Backdrop, cover_area, frosted_patch
 from .ocr import Box
 from .overlay import (MAX_TEXT_WIDTH_RATIO, beside_original_position, blend, centered_position, cover_box,
                       hex_to_rgb, render_subtitle, subtitle_position)
@@ -21,6 +22,8 @@ MIN_FONT_PX = 12
 PREVIEW_TEXT = "Feliratpanel – húzd egérrel, görgővel méretezd, jobb klikk: eredeti hely"
 DRAG_OUTLINE_COLOR = (0, 200, 255)
 ORIGINAL_COVER_OPACITY = 255
+MIN_COVER_FEATHER_PX = 8  # a takarás lágy szélének szélessége legalább ennyi
+COVER_PADDING_PX = 4  # a lágy szél a betűkön kívül kezdődjön
 
 
 def wheel_delta(flags: int) -> int:
@@ -40,6 +43,7 @@ class SubtitleLayer:
         self._config = config
         self._on_change = on_change
         self._last_rect: tuple[int, int, int, int] | None = None
+        self._last_cover: Box | None = None
         self._frame_size = (0, 0)
         self._grab_offset: tuple[int, int] | None = None
         self._drag_center: tuple[int, int] | None = None
@@ -53,30 +57,60 @@ class SubtitleLayer:
         return self._last_rect
 
     @property
+    def last_cover(self) -> Box | None:
+        """A legutóbb eltakart terület (az angol felirat helye margóval), vagy None."""
+        return self._last_cover
+
+    @property
     def is_dragging(self) -> bool:
         return self._grab_offset is not None
 
     def draw(self, frame: np.ndarray, shown: Shown | None, hide_original: bool,
-             preview_anchor: Box | None = None) -> np.ndarray:
-        """preview_anchor: ha nincs felirat, mintaszöveg mutatja a panel helyét."""
+             preview_anchor: Box | None = None, backdrop: Backdrop | None = None) -> np.ndarray:
+        """preview_anchor: ha nincs felirat, mintaszöveg mutatja a panel helyét.
+
+        backdrop: a takarás nélküli játékkép; ha megvan, az angolt elmosott „matt üveg” takarja.
+        """
         height, width = frame.shape[:2]
         self._frame_size = (width, height)
-        if shown is None and preview_anchor is not None:
+        self._last_cover = None
+        is_preview = shown is None and preview_anchor is not None
+        if is_preview:
             shown = Shown(PREVIEW_TEXT, preview_anchor)
         if shown is None:
             self._last_rect = None
             return frame
+        if hide_original and not is_preview:
+            # Az angol szöveget teljesen takarjuk, akármilyen átlátszó a magyar panel
+            frame = self._cover_original(frame, shown.anchor, backdrop)
         font_size = max(MIN_FONT_PX, int(height * self._config.font_size_ratio))
         center = self._custom_center(width, height)
         if center is None:
             return self._draw_at_original(frame, shown, hide_original, font_size)
-        # Az angol szöveget teljesen takarjuk, akármilyen átlátszó a magyar panel
-        output = cover_box(frame, shown.anchor, ORIGINAL_COVER_OPACITY) if hide_original else frame
+        output = frame
         rendered = render_subtitle(shown.text, self._config.font_path, font_size,
                                    int(width * MAX_TEXT_WIDTH_RATIO), (0, 0), self._config.panel_opacity,
                                    hex_to_rgb(self._config.speaker_color))
         x, y = centered_position(rendered, center[0], center[1], width, height)
         return self._finish(output, rendered, x, y)
+
+    def _cover_original(self, frame: np.ndarray, anchor: Box, backdrop: Backdrop | None) -> np.ndarray:
+        if backdrop is not None:
+            height, width = frame.shape[:2]
+            # Átméretezés után a korábbi sáv kilóghat a képből: csak a közös részt takarjuk
+            limits = Box(max(backdrop.area.left, 0), max(backdrop.area.top, 0),
+                         min(backdrop.area.right, width), min(backdrop.area.bottom, height))
+            feather = max(MIN_COVER_FEATHER_PX, anchor.height // 2)
+            area = cover_area(anchor, feather + COVER_PADDING_PX, limits)
+            if area.width > 0 and area.height > 0:
+                offset_x, offset_y = area.left - backdrop.area.left, area.top - backdrop.area.top
+                source = backdrop.image[offset_y:offset_y + area.height, offset_x:offset_x + area.width]
+                output = frame.copy()
+                output[area.top:area.bottom, area.left:area.right] = frosted_patch(source, feather)
+                self._last_cover = area
+                return output
+        self._last_cover = anchor
+        return cover_box(frame, anchor, ORIGINAL_COVER_OPACITY)
 
     def _draw_at_original(self, frame: np.ndarray, shown: Shown, hide_original: bool,
                           font_size: int) -> np.ndarray:

@@ -14,7 +14,8 @@ from .capture import CaptureError
 from .config import AppConfig
 from .facecam import FacecamStyle, place_facecam
 from .facecam_drag import FacecamDragger
-from .ocr import SubtitleReader, region_to_box
+from .frosted_cover import Backdrop
+from .ocr import Box, SubtitleReader, region_to_box
 from .translator import CachedTranslator
 
 WINDOW_NAME = "GTA felirat"
@@ -89,7 +90,10 @@ class OverlayApp(SubtitleAppBase):
         output = frame
         if self._view.overlay_enabled:
             preview = region_to_box(self._config.subtitle_region, width, height) if self._view.show_region else None
-            output = self._subtitles.draw(frame, self._pipeline.shown, self._config.hide_original, preview)
+            # A képkocka maga a takarás nélküli játékkép: ebből lesz az angol szöveg elmosott takarása
+            backdrop = Backdrop(frame, Box(0, 0, width, height))
+            output = self._subtitles.draw(frame, self._pipeline.shown, self._config.hide_original, preview,
+                                          backdrop)
         if self._view.show_region:
             area = region_to_box(self._config.subtitle_region, width, height)
             output = output.copy()
