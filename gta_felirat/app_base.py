@@ -1,10 +1,12 @@
 """A két mód (capture card ablak, Remote Play réteg) közös része: beállítások élő módosítása."""
 
 import logging
+import sys
 from dataclasses import replace
 from pathlib import Path
 
 from .config import AppConfig, ConfigError, save_settings
+from .key_vault import KeyVault, KeyVaultError, WindowsCredentialVault
 from .ocr import SubtitleReader
 from .subtitle_layer import SubtitleLayer
 from .subtitle_pipeline import SubtitlePipeline
@@ -23,7 +25,8 @@ class SubtitleAppBase:
         self._config = config
         self._config_path = config_path
         store = TranslationStore(config_path.parent / STORE_FILE_NAME) if config_path else None
-        self._translation = TranslationService(choice_from(config), translator, store)
+        self._translation = TranslationService(choice_from(config), translator, store,
+                                               vault=_open_key_vault() if config_path else None)
         self._pipeline = SubtitlePipeline(config, reader, self._translation)
         self._subtitles = SubtitleLayer(config, on_change=self.apply_updates)
         self._settings = None
@@ -57,6 +60,11 @@ class SubtitleAppBase:
         if self._settings is not None:
             self._settings.sync(self._config)
 
+    def _forget_key(self, name: str) -> None:
+        self._translation.forget_key(name)
+        if self._settings is not None:
+            self._settings.sync(self._config)
+
     def _save(self, updates: dict) -> None:
         if self._config_path is None:
             return
@@ -70,4 +78,16 @@ class SubtitleAppBase:
 
         return SettingsWindow(self._config, SettingsCallbacks(
             on_change=self.apply_updates, on_session_key=self._set_session_key,
-            has_key=self._translation.has_key, status=self._translation.status, **extra))
+            has_key=self._translation.has_key, status=self._translation.status,
+            on_forget_key=self._forget_key, is_key_saved=self._translation.is_key_saved, **extra))
+
+
+def _open_key_vault() -> KeyVault | None:
+    """A Windows Hitelesítőadat-kezelő; más rendszeren (vagy ha nem elérhető) nincs kulcsmentés."""
+    if sys.platform != "win32":
+        return None
+    try:
+        return WindowsCredentialVault()
+    except (OSError, KeyVaultError) as err:
+        logger.warning("A kulcsok mentése nem elérhető: %s", err)
+        return None

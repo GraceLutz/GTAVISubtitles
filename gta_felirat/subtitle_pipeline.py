@@ -12,7 +12,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 import numpy as np
 
 from .config import AppConfig
-from .ocr import Box, OcrResult, SubtitleReader, region_to_box
+from .ocr import Box, OcrResult, SubtitleReader, is_spoken_line, region_to_box
 from .subtitle_layer import Shown
 from .subtitle_tracker import NewSubtitle, SubtitleCleared, SubtitleTracker, normalize, similarity
 from .translation_service import TranslationService
@@ -112,8 +112,11 @@ class SubtitlePipeline:
             return
         if self._is_own_translation(result.text):
             return  # a saját kiírt fordításunkat olvastuk vissza, nem új felirat
-        self._prefetch(result.text)
-        event = self._tracker.update(result.text, now)
+        text = result.text
+        if self._config.only_spoken_lines and not is_spoken_line(text):
+            text = ""  # küldetésszöveg, tábla, menü: nem kimondott szöveg, nem fordítjuk
+        self._prefetch(text)
+        event = self._tracker.update(text, now)
         if isinstance(event, NewSubtitle):
             self._last_box = result.box
             self._start_translation(event.text)

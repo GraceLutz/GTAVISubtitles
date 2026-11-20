@@ -6,9 +6,10 @@ import time
 from concurrent.futures import Executor, Future
 
 from .config import AppConfig
+from .key_vault import KeyVault, KeyVaultError
 from .languages import find_language
 from .translation_store import TranslationStore
-from .translator import (TRANSLATOR_LABELS, CachedTranslator, TranslationError, TranslatorChoice,
+from .translator import (KEY_ENV_VARS, TRANSLATOR_LABELS, CachedTranslator, TranslationError, TranslatorChoice,
                          create_backend, resolve_backend_name, resolve_key)
 
 # Ennyi csend után egy ingyenes kéréssel nyitva tartjuk a kapcsolatot (a szerverek ~60 mp után zárnak)
@@ -24,11 +25,13 @@ def choice_from(config: AppConfig) -> TranslatorChoice:
 
 class TranslationService:
     def __init__(self, choice: TranslatorChoice, translator: CachedTranslator | None = None,
-                 store: TranslationStore | None = None) -> None:
+                 store: TranslationStore | None = None, vault: KeyVault | None = None) -> None:
         self._lock = threading.Lock()
         self._store = store
         self._choice = choice
-        self._session_keys: dict[str, str] = {}
+        self._vault = vault
+        self._saved_key_names: set[str] = set()
+        self._session_keys: dict[str, str] = self._load_saved_keys()
         self._translator = translator
         self._error = ""
         self._last_latency_ms: int | None = None
@@ -57,13 +60,49 @@ class TranslationService:
         model = {"claude": choice.claude_model, "openai": choice.openai_model}.get(backend, "")
         return ":".join(part for part in (backend, model, choice.target_lang) if part)
 
+    def _load_saved_keys(self) -> dict[str, str]:
+        keys: dict[str, str] = {}
+        if self._vault is None:
+            return keys
+        for name in KEY_ENV_VARS:
+            try:
+                key = self._vault.load(name)
+            except KeyVaultError as err:
+                logger.warning("%s", err)
+                continue
+            if key:
+                keys[name] = key
+                self._saved_key_names.add(name)
+        return keys
+
     def set_session_key(self, name: str, key: str) -> None:
-        """A kulcs csak a memóriában marad, fájlba nem írjuk."""
+        """A panelen beírt kulcs: azonnal használjuk, és a Windows Hitelesítőadat-kezelőjébe mentjük."""
         self._session_keys[name] = key
+        self._saved_key_names.discard(name)
+        if self._vault is not None:
+            try:
+                self._vault.save(name, key)
+                self._saved_key_names.add(name)
+            except KeyVaultError as err:
+                logger.warning("%s; ebben a futásban így is használom", err)
+        self.rebuild(self._choice)
+
+    def forget_key(self, name: str) -> None:
+        """A kulcs törlése most és a következő indításokra is."""
+        self._session_keys.pop(name, None)
+        self._saved_key_names.discard(name)
+        if self._vault is not None:
+            try:
+                self._vault.delete(name)
+            except KeyVaultError as err:
+                logger.warning("%s", err)
         self.rebuild(self._choice)
 
     def has_key(self, name: str) -> bool:
         return bool(resolve_key(name, self._session_keys))
+
+    def is_key_saved(self, name: str) -> bool:
+        return name in self._saved_key_names
 
     def prefetch(self, text: str, pool: Executor) -> None:
         """Előre elindítja a fordítást, hogy mire a felirat megerősítést kap, kész legyen."""

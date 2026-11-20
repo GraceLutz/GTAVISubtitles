@@ -102,10 +102,14 @@ Ha máshová húzod a panelt, az eredeti angol szöveget egy sötét doboz takar
 
 - **Célnyelv:** 30 nyelv listából, vagy bármelyik nyelvkód beírva + Enter (pl. `lt`, `et`).
 - **Fordító:** Automatikus, DeepL, Claude, ChatGPT vagy Google.
-- **API-kulcs:** csak erre a futásra, **nem mentődik fájlba**.
+- **API-kulcs:** a **Mentés** gomb a Windows Hitelesítőadat-kezelőjébe menti (titkosítva, a
+  felhasználói fiókodhoz kötve), így a következő indításkor nem kell újra beírni. A **Törlés**
+  gomb eltávolítja. A kulcs soha nem kerül a `config.json`-ba vagy a repóba.
 - **AI modell:** Claude-nál vagy GPT-nél átírható, Enterrel érvényes.
 - **Betűméret, háttér fedése:** csúszkák, azonnal látszik a hatásuk.
 - **Angol felirat eltakarása**, valamint **panel vissza az eredeti helyre**.
+- **Csak a kimondott szöveg:** csak a „Név: szöveg” párbeszédsorokat fordítja; küldetésszöveg,
+  tábla, menü, telefonhívás-kijelző nem megy fordításra (alapból bekapcsolva).
 - Alul az állapot: melyik fordító fut, **a mért fordítási idő (ms)**, és ha hiba van, mi a gond.
 
 Minden módosítás azonnal érvényes, és bekerül a `config.json`-ba (a kulcsok kivételével).
@@ -123,7 +127,8 @@ Minden módosítás azonnal érvényes, és bekerül a `config.json`-ba (a kulcs
 API-t külön kell feltölteni a fenti oldalakon, használat szerint fizetős. Egy
 végigjátszás feliratai jellemzően pár dollárba kerülnek.
 
-Kulcs tartós beállítása (utána nyiss új PowerShell-ablakot):
+Kulcs tartós beállítása a panel **Mentés** gombja helyett környezeti változóval
+(utána nyiss új PowerShell-ablakot):
 
 ```powershell
 setx DEEPL_API_KEY "ide-a-kulcsod"
@@ -212,6 +217,7 @@ Az overlay ablak csak képet mutat. A hanghoz válassz egyet:
 | `claude_model` | `"claude-haiku-5-5"` | Claude-modell |
 | `openai_model` | `"gpt-4.1-mini"` | GPT-modell |
 | `hide_original` | `true` | az angol szöveg takarása |
+| `only_spoken_lines` | `true` | csak a „Név: szöveg” párbeszédsorok fordítása |
 | `panel_opacity` | `245` | a panel háttere, 0 (átlátszó) – 255 (teljesen fedő) |
 | `subtitle_x` / `subtitle_y` | `null` | a panel közepe a kép arányában; `null` = az angol felirat helyén |
 | `font_path` | Segoe UI Bold | bármilyen `.ttf`, ami tudja a célnyelv betűit |

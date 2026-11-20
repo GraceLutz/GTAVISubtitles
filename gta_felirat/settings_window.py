@@ -22,11 +22,13 @@ AI_MODEL_FIELDS = {"claude": "claude_model", "openai": "openai_model"}
 @dataclass(frozen=True)
 class SettingsCallbacks:
     on_change: Callable[[dict, bool], None]   # (módosítások, mentse-e)
-    on_session_key: Callable[[str, str], None]  # (fordító, kulcs) — csak memóriában
+    on_session_key: Callable[[str, str], None]  # (fordító, kulcs) — használat és mentés
     has_key: Callable[[str], bool]
     status: Callable[[], str]
     on_preview: Callable[[bool], None] | None = None  # Remote Play mód: minta + figyelt sáv
     on_close: Callable[[], None] | None = None  # None: bezáráskor csak elrejtjük
+    on_forget_key: Callable[[str], None] | None = None  # mentett kulcs törlése
+    is_key_saved: Callable[[str], bool] | None = None
 
 
 class SettingsWindow:
@@ -81,7 +83,9 @@ class SettingsWindow:
         translator_box.bind("<<ComboboxSelected>>", lambda _e: self._on_translator_selected())
         ttk.Label(frame, text="API-kulcs").grid(row=3, column=0, sticky="w")
         ttk.Entry(frame, textvariable=self._key, show="•", width=28).grid(row=3, column=1, sticky="w")
-        ttk.Button(frame, text="Használat", command=self._on_key).grid(row=3, column=2, padx=(6, 0))
+        ttk.Button(frame, text="Mentés", command=self._on_key).grid(row=3, column=2, padx=(6, 0))
+        if self._callbacks.on_forget_key is not None:
+            ttk.Button(frame, text="Törlés", command=self._on_forget_key).grid(row=3, column=3, padx=(6, 0))
         self._key_status = ttk.Label(frame, text="", foreground="#777", wraplength=300)
         self._key_status.grid(row=4, column=1, columnspan=2, sticky="w")
         ttk.Label(frame, text="AI modell").grid(row=5, column=0, sticky="w")
@@ -93,6 +97,7 @@ class SettingsWindow:
         self._font = tk.DoubleVar()
         self._opacity = tk.DoubleVar()
         self._hide_original = tk.BooleanVar()
+        self._only_spoken = tk.BooleanVar()
         ttk.Separator(frame).grid(row=6, column=0, columnspan=3, sticky="ew", pady=10)
         ttk.Label(frame, text="Betűméret").grid(row=7, column=0, sticky="w")
         font_scale = tk.Scale(frame, variable=self._font, orient="horizontal", length=220,
@@ -109,6 +114,9 @@ class SettingsWindow:
         ttk.Checkbutton(frame, text="Az angol felirat eltakarása", variable=self._hide_original,
                         command=lambda: self._change({"hide_original": self._hide_original.get()})
                         ).grid(row=9, column=1, columnspan=2, sticky="w")
+        ttk.Checkbutton(frame, text="Csak a kimondott szöveg („Név: szöveg” sorok)", variable=self._only_spoken,
+                        command=lambda: self._change({"only_spoken_lines": self._only_spoken.get()})
+                        ).grid(row=13, column=0, columnspan=3, sticky="w", pady=(6, 0))
         ttk.Button(frame, text="Panel vissza az angol felirat helyére",
                    command=lambda: self._change({"subtitle_x": None, "subtitle_y": None})
                    ).grid(row=10, column=1, columnspan=2, sticky="w", pady=(4, 0))
@@ -143,6 +151,11 @@ class SettingsWindow:
             self._callbacks.on_session_key(name, self._key.get().strip())
             self._key.set("")
 
+    def _on_forget_key(self) -> None:
+        name = self._config.translator
+        if name in KEY_ENV_VARS and self._callbacks.on_forget_key is not None:
+            self._callbacks.on_forget_key(name)
+
     def _on_model(self) -> None:
         field_name = AI_MODEL_FIELDS.get(self._config.translator)
         if field_name and self._model.get().strip():
@@ -163,6 +176,7 @@ class SettingsWindow:
             self._font.set(round(config.font_size_ratio * PERCENT, 1))
             self._opacity.set(round(config.panel_opacity / 255 * PERCENT))
             self._hide_original.set(config.hide_original)
+            self._only_spoken.set(config.only_spoken_lines)
             field_name = AI_MODEL_FIELDS.get(config.translator)
             self._model.set(getattr(config, field_name) if field_name else "")
             self._model_entry.configure(state="normal" if field_name else "disabled")
@@ -174,8 +188,10 @@ class SettingsWindow:
         name = self._config.translator
         if name not in KEY_ENV_VARS:
             text = "Nem kell kulcs" if name == "google" else "A meglévő kulcsok közül választ"
+        elif self._callbacks.is_key_saved is not None and self._callbacks.is_key_saved(name):
+            text = "✓ Kulcs elmentve (Windows Hitelesítőadat-kezelő)"
         elif self._callbacks.has_key(name):
-            text = "✓ Kulcs megvan"
+            text = "✓ Kulcs megvan (ebben a futásban)"
         else:
             text = f"Nincs kulcs: írd be fent, vagy állítsd be a {KEY_ENV_VARS[name]} változót"
         self._key_status.configure(text=text)

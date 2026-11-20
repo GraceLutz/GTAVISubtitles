@@ -16,10 +16,14 @@ MIN_LETTERS_PLAIN = 8
 MIN_LETTERS_SENTENCE = 2
 SENTENCE_END = (".", "!", "?", "…")
 MAX_LEADING_FRAGMENT_LETTERS = 3  # pl. "oes" egy levágott szó vége a beszélő előtt
+MAX_ICON_CHARS = 2  # gomb-ikon vagy HUD-maradék a mondat után: „8”, „C8”, „X”, „TS”
 # Ha a szavak ennyi része ékezetes, az nem angol felirat (pl. a PS5 magyar menüje)
 MAX_ACCENTED_WORD_RATIO = 0.4
 LATIN_SCRIPT_LIMIT = 0x24F  # a Latin bővített-B blokk vége: fölötte nem angol betű
-SPEAKER_PATTERN = re.compile(r"^[A-Z][\w .'-]{0,30}:\s*\S")
+# Beszélő neve: csak betűk (számjegy nem, így a hívás-időzítő „Jason 00:04” nem beszélő)
+SPEAKER_PATTERN = re.compile(r"^[A-Z](?:[^\W\d_]|[ .'-]){0,30}:\s*\S")
+# A telefonhívás kijelzője a sor végén: „… alright? Jason 00:05 D”
+CALL_TIMER_TAIL = re.compile(r"\s+(?:[A-Z][\w'.-]*\s+){0,2}\d{1,2}:\d{2}(?:\s+\S{1,2})*\s*$")
 
 
 @dataclass(frozen=True)
@@ -82,13 +86,37 @@ def drop_leading_fragment(text: str) -> str:
                 and second[:1].isupper()):
             return " ".join(tokens[1:])
         rest = " ".join(tokens[1:])
-        if len(first) == 1 and SPEAKER_PATTERN.match(rest):
-            return rest  # gomb-ikon (X, O, R1…) a beszélő neve előtt
+        is_icon_or_hud = (len(first) == 1 or first.isdigit()
+                          or (first.isalpha() and first.isupper() and len(first) <= MAX_LEADING_FRAGMENT_LETTERS))
+        if is_icon_or_hud and SPEAKER_PATTERN.match(rest):
+            return rest  # gomb-ikon (X, R1…), HUD-szám vagy -felirat („SEL”) a beszélő neve előtt
     return text
 
 
+def drop_call_timer(text: str) -> str:
+    """Levágja a sor végéről a telefonhívás nevét és időzítőjét, ha előtte lezárt mondat áll."""
+    match = CALL_TIMER_TAIL.search(text)
+    if match and text[:match.start()].rstrip().endswith(SENTENCE_END):
+        return text[:match.start()].rstrip()
+    return text
+
+
+def drop_trailing_icons(text: str) -> str:
+    """Levágja a lezárt mondat utáni rövid ikon-maradékokat („Menni fog, haver. 8”)."""
+    tokens = text.split()
+    while (len(tokens) >= 2 and len(tokens[-1]) <= MAX_ICON_CHARS
+           and not tokens[-1].endswith(SENTENCE_END) and tokens[-2].endswith(SENTENCE_END)):
+        tokens.pop()
+    return " ".join(tokens)
+
+
 def clean_ocr_text(text: str) -> str:
-    return drop_leading_fragment(strip_stray_glyphs(text))
+    return drop_trailing_icons(drop_call_timer(drop_leading_fragment(strip_stray_glyphs(text))))
+
+
+def is_spoken_line(text: str) -> bool:
+    """Kimondott szöveg: „Név: szöveg” alakú párbeszédsor (nem tábla, küldetésszöveg vagy menü)."""
+    return bool(SPEAKER_PATTERN.match(text.strip()))
 
 
 def is_mostly_accented(text: str) -> bool:

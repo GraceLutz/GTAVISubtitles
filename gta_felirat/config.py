@@ -53,6 +53,7 @@ class AppConfig:
     claude_model: str = DEFAULT_CLAUDE_MODEL
     openai_model: str = DEFAULT_OPENAI_MODEL
     hide_original: bool = True
+    only_spoken_lines: bool = True  # csak a „Név: szöveg” párbeszédsorokat fordítja
     panel_opacity: int = 245
     subtitle_x: float | None = None  # None: az eredeti felirat helyén
     subtitle_y: float | None = None
