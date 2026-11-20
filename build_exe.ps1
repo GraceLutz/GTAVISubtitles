@@ -1,6 +1,8 @@
-﻿# Telepítés nélkül futtatható Windows-csomag (PyInstaller --onedir mappa + zip) streamereknek.
+﻿# Telepítés nélkül futtatható Windows-csomagok (PyInstaller) streamereknek.
 #   .\build_exe.ps1
-# Eredmény: dist\GTA6Felirat\GTA6Felirat.exe és dist\GTA6Felirat-win64.zip
+# Eredmény:
+#   dist\GTA6Felirat.exe            egyetlen fájl: letöltés után dupla kattintással indul
+#   dist\GTA6Felirat\ + dist\GTA6Felirat-win64.zip   mappás változat (gyorsabb indulás)
 # Előfeltétel: a .venv már létezik (egyszer futtasd az inditas.ps1-et).
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
@@ -26,32 +28,43 @@ if ($LASTEXITCODE -ne 0) { throw "A PyInstaller telepítése nem sikerült." }
 $distDir = Join-Path $PSScriptRoot "dist"
 $buildDir = Join-Path $PSScriptRoot "build"
 $appDir = Join-Path $distDir $AppName
+$oneFileExe = Join-Path $distDir "$AppName.exe"
 $zipPath = Join-Path $distDir "$AppName-win64.zip"
 $launcher = Join-Path $PSScriptRoot "packaging\exe_launcher.py"
+New-Item -ItemType Directory -Force $buildDir | Out-Null
 
-# --collect-data rapidocr: ONNX-modellek és yaml-konfigok; --collect-binaries onnxruntime: DLL-ek
-& $python -m PyInstaller --noconfirm --clean --onedir --console `
-    --name $AppName `
-    --distpath $distDir --workpath $buildDir --specpath $buildDir `
-    --paths $PSScriptRoot `
-    --collect-data rapidocr `
-    --collect-binaries onnxruntime `
-    --exclude-module pytest `
-    $launcher
-if ($LASTEXITCODE -ne 0) { throw "A PyInstaller build nem sikerült." }
-
-# A config.json az exe mellé kerül (onnan olvas és oda ment a program). A commitolt változat
-# megy bele, nem a helyi, játék közben átállított beállítások.
-$configTarget = Join-Path $appDir "config.json"
+# Alap config.json a csomagba: a commitolt változat, nem a helyi, játék közben átállított beállítások
+$defaultConfig = Join-Path $buildDir "default_config.json"
 $committedConfig = git show HEAD:config.json 2>$null
 if ($LASTEXITCODE -eq 0 -and $committedConfig) {
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllText($configTarget, (($committedConfig -join "`n") + "`n"), $utf8NoBom)
+    [System.IO.File]::WriteAllText($defaultConfig, (($committedConfig -join "`n") + "`n"), $utf8NoBom)
 } else {
-    Copy-Item (Join-Path $PSScriptRoot "config.json") $configTarget
+    Copy-Item (Join-Path $PSScriptRoot "config.json") $defaultConfig
 }
+
+function Invoke-PyInstaller([string]$Mode, [string]$WorkDir) {
+    # --collect-data rapidocr: ONNX-modellek és yaml-konfigok; --collect-binaries onnxruntime: DLL-ek
+    & $python -m PyInstaller --noconfirm --clean $Mode --console `
+        --name $AppName `
+        --distpath $distDir --workpath $WorkDir --specpath $WorkDir `
+        --paths $PSScriptRoot `
+        --add-data "$defaultConfig;." `
+        --collect-data rapidocr `
+        --collect-binaries onnxruntime `
+        --exclude-module pytest `
+        $launcher
+    if ($LASTEXITCODE -ne 0) { throw "A PyInstaller build ($Mode) nem sikerült." }
+}
+
+Invoke-PyInstaller "--onedir" (Join-Path $buildDir "onedir")
+Invoke-PyInstaller "--onefile" (Join-Path $buildDir "onefile")
+
+# A mappás változatban a config.json eleve az exe mellett van (onnan olvas és oda ment a program)
+Copy-Item $defaultConfig (Join-Path $appDir "config.json")
 Copy-Item (Join-Path $PSScriptRoot "packaging\OLVASS_EL.txt") (Join-Path $appDir "OLVASS_EL.txt")
 
+# Mindkét változat ugyanazokat a fájlokat csomagolja, ezért a mappás változaton ellenőrzünk
 $leaked = Get-ChildItem $appDir -Recurse -File -Include $ForbiddenFiles
 if ($leaked) {
     throw "Tiltott fájl került a csomagba: $($leaked.FullName -join ', ')"
@@ -65,5 +78,7 @@ if (-not $models -or -not $ortDll) {
 if (Test-Path $zipPath) { Remove-Item $zipPath }
 Compress-Archive -Path $appDir -DestinationPath $zipPath -CompressionLevel Optimal
 
-$sizeMb = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
-Write-Host "Kész: $zipPath ($sizeMb MB)"
+foreach ($artifact in @($oneFileExe, $zipPath)) {
+    $sizeMb = [math]::Round((Get-Item $artifact).Length / 1MB, 1)
+    Write-Host "Kész: $artifact ($sizeMb MB)"
+}

@@ -6,6 +6,7 @@ megadása nélkül Remote Play módban indul, a config.json pedig az exe mellett
 
 import argparse
 import logging
+import shutil
 import sys
 import traceback
 from pathlib import Path
@@ -18,6 +19,7 @@ from .config import SUPPORTED_TRANSLATORS, ConfigError, load_config, with_overri
 from .ocr import SubtitleReader
 
 CONFIG_FILE_NAME = "config.json"
+BUNDLED_CONFIG_NAME = "default_config.json"
 WEBCAM_WIDTH = 1280
 WEBCAM_HEIGHT = 720
 WEBCAM_FPS = 30
@@ -35,6 +37,23 @@ def default_config_path() -> Path:
     if is_frozen():
         return Path(sys.executable).resolve().parent / CONFIG_FILE_NAME
     return Path(CONFIG_FILE_NAME)
+
+
+def bundled_default_config() -> Path:
+    """Az exe-be csomagolt alap config.json (az egyfájlos exe mellett eleinte nincs config.json)."""
+    return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / BUNDLED_CONFIG_NAME
+
+
+def ensure_config_file(target: Path, template: Path) -> None:
+    """Ha még nincs config.json, a csomagolt alapértékekkel létrehozza; meglévőt sosem ír felül."""
+    if target.exists() or not template.exists():
+        return
+    try:
+        shutil.copyfile(template, target)
+    except OSError as err:
+        # Írásvédett mappában is induljon el, csak a beállítások nem maradnak meg
+        print(f"Figyelem: nem tudom létrehozni a(z) {target} fájlt, alapbeállításokkal indulok: {err}",
+              file=sys.stderr)
 
 
 def with_exe_defaults(argv: list[str]) -> list[str]:
@@ -153,6 +172,7 @@ def _wait_before_closing() -> None:
 def run_exe() -> int:
     """A csomagolt exe belépési pontja: Remote Play az alapmód, és hiba után nyitva marad az ablak."""
     try:
+        ensure_config_file(default_config_path(), bundled_default_config())
         code = main(with_exe_defaults(sys.argv[1:]))
     except Exception:  # noqa: BLE001 - váratlan hibánál is látszódjon az ok, ne csak villanjon az ablak
         traceback.print_exc()

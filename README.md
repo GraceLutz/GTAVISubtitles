@@ -17,16 +17,23 @@ ablak fölé tesz egy átlátszó réteget, lásd [PS Remote Play mód](#ps-remo
 
 ## Letöltés streamereknek
 
-Python és telepítés nélkül, egy kattintással:
+Python, telepítés és kicsomagolás nélkül, egy kattintással:
 
-**[⬇ GTA6Felirat-win64.zip letöltése](https://github.com/GraceLutz/GTAVISubtitles/releases/latest/download/GTA6Felirat-win64.zip)**
+**[⬇ GTA6Felirat.exe letöltése](https://github.com/GraceLutz/GTAVISubtitles/releases/latest/download/GTA6Felirat.exe)**
 (vagy a [Releases](https://github.com/GraceLutz/GTAVISubtitles/releases) oldalról)
 
-1. Csomagold ki a zipet, és indítsd el a PS Remote Playt (csatlakozz a konzolhoz).
-2. Dupla kattintás a `GTA6Felirat\GTA6Felirat.exe`-re. Alapból Remote Play módban
-   indul; a felirat a Medal/OBS monitorfelvételen és a streamen is látszik.
-3. Ha a SmartScreen figyelmeztet: *További információ → Futtatás mindenképp*
+1. Tedd az exe-t egy saját mappába (pl. `C:\GTA6Felirat`), mert első indításkor
+   maga mellé teszi a `config.json`-t.
+2. Indítsd el a PS Remote Playt, és csatlakozz a konzolhoz.
+3. Dupla kattintás a `GTA6Felirat.exe`-re. Alapból Remote Play módban indul; a
+   felirat a Medal/OBS monitorfelvételen és a streamen is látszik. Az indulás
+   10–20 másodperc, mert az exe minden induláskor kicsomagolja magát.
+4. Ha a SmartScreen figyelmeztet: *További információ → Futtatás mindenképp*
    (az exe nincs digitálisan aláírva).
+
+Gyorsabban induló, mappás változat:
+[GTA6Felirat-win64.zip](https://github.com/GraceLutz/GTAVISubtitles/releases/latest/download/GTA6Felirat-win64.zip)
+(kicsomagolás után a `GTA6Felirat\GTA6Felirat.exe`-t indítsd).
 
 Az API-kulcsot a beállítóablakban kell megadni; a Windows Hitelesítőadat-kezelője
 tárolja, nem kerül a mappába. A `config.json` az exe mellett van. Az összes
@@ -39,7 +46,8 @@ A csomag elkészítése (fejlesztőknek, a `.venv` már létezzen):
 .\build_exe.ps1
 ```
 
-Eredmény: `dist\GTA6Felirat\` és `dist\GTA6Felirat-win64.zip`.
+Eredmény: `dist\GTA6Felirat.exe` (egyfájlos), valamint `dist\GTA6Felirat\` és
+`dist\GTA6Felirat-win64.zip` (mappás).
 
 ## Amire szükség van
 
