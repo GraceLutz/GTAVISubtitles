@@ -5,7 +5,7 @@
 - Jobb gombbal visszaugrik az eredeti angol felirat helyére.
 """
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Callable
 
 import cv2
@@ -13,7 +13,7 @@ import numpy as np
 
 from .config import MAX_FONT_SIZE_RATIO, MIN_FONT_SIZE_RATIO, AppConfig
 from .ocr import Box
-from .overlay import (MAX_TEXT_WIDTH_RATIO, blend, centered_position, cover_box, render_subtitle,
+from .overlay import (MAX_TEXT_WIDTH_RATIO, beside_original_position, blend, centered_position, cover_box, render_subtitle,
                       subtitle_position)
 
 FONT_STEP = 0.002
@@ -85,12 +85,12 @@ class SubtitleLayer:
             min_panel = (anchor.width + font_size, anchor.height + font_size // 2)
         else:
             min_panel = (0, 0)
-            # Az eredeti fölé tesszük, hogy mindkettő látsszon
-            anchor = replace(anchor, top=anchor.top - anchor.height - font_size * 2,
-                             bottom=anchor.top - font_size)
         rendered = render_subtitle(shown.text, self._config.font_path, font_size,
                                    int(width * MAX_TEXT_WIDTH_RATIO), min_panel, self._config.panel_opacity)
-        x, y = subtitle_position(rendered, anchor, width, height)
+        if hide_original:
+            x, y = subtitle_position(rendered, anchor, width, height)
+        else:
+            x, y = beside_original_position(rendered, anchor, width, height, gap=font_size // 2)
         return self._finish(frame, rendered, x, y)
 
     def _finish(self, frame: np.ndarray, rendered, x: int, y: int) -> np.ndarray:

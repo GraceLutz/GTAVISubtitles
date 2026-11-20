@@ -37,6 +37,14 @@ class RenderedSubtitle:
 
 
 def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:
+    """Tördelés; a sortörés (beszélőnként külön sor) mindig új sort kezd."""
+    lines: list[str] = []
+    for paragraph in text.split("\n"):
+        lines.extend(_wrap_paragraph(paragraph, font, max_width))
+    return lines
+
+
+def _wrap_paragraph(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:
     lines: list[str] = []
     current = ""
     for word in text.split():
@@ -109,6 +117,17 @@ def subtitle_position(rendered: RenderedSubtitle, anchor: Box,
     center_x = (anchor.left + anchor.right) // 2
     center_y = (anchor.top + anchor.bottom) // 2
     return centered_position(rendered, center_x, center_y, frame_width, frame_height)
+
+
+def beside_original_position(rendered: RenderedSubtitle, anchor: Box, frame_width: int,
+                             frame_height: int, gap: int) -> tuple[int, int]:
+    """Az angol felirat alá teszi a fordítást; ha ott nincs hely, fölé, hogy egyik se takarja a másikat."""
+    center_x = (anchor.left + anchor.right) // 2
+    x = min(max(center_x - rendered.width // 2, 0), max(frame_width - rendered.width, 0))
+    below = anchor.bottom + gap
+    if below + rendered.height <= frame_height:
+        return x, below
+    return x, max(anchor.top - gap - rendered.height, 0)
 
 
 def blend(frame: np.ndarray, rendered: RenderedSubtitle, x: int, y: int) -> np.ndarray:

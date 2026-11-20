@@ -17,6 +17,8 @@ CACHE_SIZE = 2000
 MAX_SPEAKER_NAME_LENGTH = 24
 # „Jason: Gyere már!” — a beszélő nevét nem fordítjuk le
 _SPEAKER_PREFIX = re.compile(r"^([A-Z][\w.'\- ]{0,%d}):\s+(.+)$" % (MAX_SPEAKER_NAME_LENGTH - 1))
+# Új beszélő kezdete egy lezárt mondat után: „… breath now. Lucia: Stop talking.”
+_SPEAKER_BOUNDARY = re.compile(r"(?<=[.!?…])\s+(?=[A-Z](?:[^\W\d_]|[ .'-]){0,30}:\s)")
 
 KEY_ENV_VARS = {"deepl": "DEEPL_API_KEY", "claude": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
 # „auto” esetén ebben a sorrendben választunk abból, amihez van kulcs
@@ -100,6 +102,11 @@ def split_speaker(text: str) -> tuple[str, str]:
     return speaker, line
 
 
+def split_speakers(text: str) -> list[str]:
+    """Ha egyszerre többen beszélnek, beszélőnként bontja a sort."""
+    return [part for part in _SPEAKER_BOUNDARY.split(text.strip()) if part]
+
+
 class CachedTranslator:
     """Ugyanazt a mondatot csak egyszer fordítja le; a beszélő nevét megtartja."""
 
@@ -122,6 +129,10 @@ class CachedTranslator:
             warm()
 
     def translate(self, text: str) -> str:
+        """Beszélőnként külön fordít és külön sorba tesz; a már lefordított sor a gyorsítótárból jön."""
+        return "\n".join(self._translate_speaker_line(part) for part in split_speakers(text))
+
+    def _translate_speaker_line(self, text: str) -> str:
         speaker, line = split_speaker(text)
         translated = self._translate_line(line)
         return f"{speaker}: {translated}" if speaker else translated
