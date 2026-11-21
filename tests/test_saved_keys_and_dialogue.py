@@ -6,7 +6,7 @@ import pytest
 
 from gta_felirat.config import AppConfig
 from gta_felirat.key_vault import KeyVaultError, WindowsCredentialVault
-from gta_felirat.ocr import Box, OcrResult, clean_ocr_text, is_spoken_line
+from gta_felirat.ocr import Box, OcrResult, clean_ocr_text, is_spoken_line, sounds_spoken
 from gta_felirat.subtitle_pipeline import SubtitlePipeline
 from gta_felirat.translation_service import TranslationService
 from gta_felirat.translator import CachedTranslator, TranslatorChoice
@@ -179,3 +179,26 @@ def test_all_text_is_translated_when_the_option_is_off():
     calls, _shown = run_two_reads(AppConfig(only_spoken_lines=False), "Go to the Vice City Port.")
 
     assert calls == ["Go to the Vice City Port."]
+
+
+@pytest.mark.parametrize("text", [
+    "If you come back without my money, I'll turn you into cowboy boots!",
+    "Noah. What is your name?",
+    "Sunny, hey. You got like a million dollars or something?",
+    "I don't know, man.",
+    "We need to talk.",
+])
+def test_nameless_line_that_sounds_spoken(text):
+    assert sounds_spoken(text)
+
+
+@pytest.mark.parametrize("text", [
+    "Go to the Vice City Port.",
+    "Press the button to open the map.",
+    "Lose the cops",
+    "Find a way backstage",
+    "PHOTO STUDIO",
+    "English About Us Privacy policy Publisher Terms & Conditions",
+])
+def test_screen_text_does_not_sound_spoken(text):
+    assert not sounds_spoken(text)

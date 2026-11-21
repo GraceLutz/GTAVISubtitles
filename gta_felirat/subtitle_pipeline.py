@@ -14,7 +14,7 @@ import numpy as np
 from .config import AppConfig
 from .i18n import t
 from .line_placement import PendingLines, TranslatedLine, build_shown, match_lines, pair_lines
-from .ocr import Box, OcrLine, OcrResult, SubtitleReader, is_spoken_line, region_to_box
+from .ocr import Box, OcrLine, OcrResult, SubtitleReader, is_spoken_line, region_to_box, sounds_spoken
 from .layer_plan import Shown
 from .speaker_color import SpeakerColors, SpeakerPalette
 from .subtitle_tracker import (NewSubtitle, SubtitleCleared, SubtitleTracker, is_same_subtitle, normalize,
@@ -127,7 +127,8 @@ class SubtitlePipeline:
             return  # a saját kiírt fordításunkat olvastuk vissza, nem új felirat
         self._palette.learn(result.speaker_colors)
         text = result.text
-        if self._config.only_spoken_lines and not is_spoken_line(text):
+        # A név nélküli tévéműsor-felirat is kimondott szöveg, ha beszédre vall (kérdés, felkiáltás, első személy)
+        if self._config.only_spoken_lines and not (is_spoken_line(text) or sounds_spoken(text)):
             text = ""  # küldetésszöveg, tábla, menü: nem kimondott szöveg, nem fordítjuk
         self._prefetch(text)
         event = self._tracker.update(text, now)

@@ -190,6 +190,19 @@ def is_spoken_line(text: str) -> bool:
     return bool(SPEAKER_PATTERN.match(text.strip()))
 
 
+# Beszédre valló név nélküli sor (a tévéműsor felirata): kérdés vagy felkiáltás a végén, vagy első személy.
+# A küldetésszöveg és a súgó felszólító, első személy nélkül, legfeljebb pont a végén („Go to the Vice City Port.”)
+_SPOKEN_ENDING = re.compile(r"[?!][\"'”’)\]]*$")
+# Kisbetűvel (az „I” mindig nagy): a menü „About Us” nagybetűs szava nem beszéd
+_FIRST_PERSON = re.compile(r"\b(?:I(?:['’](?:m|ll|ve|d))?|[Mm]e|[Mm]y|mine|[Ww]e(?:['’](?:re|ll|ve))?|us|[Oo]ur)\b")
+
+
+def sounds_spoken(text: str) -> bool:
+    """Név nélkül is beszédnek hangzó sor: kérdés, felkiáltás vagy első személyű mondat."""
+    stripped = text.strip()
+    return bool(_SPOKEN_ENDING.search(stripped) or _FIRST_PERSON.search(stripped))
+
+
 def is_mostly_accented(text: str) -> bool:
     """Az angolban ritka az ékezet; ha sok szóban van, az más nyelvű szöveg (menü, értesítés)."""
     words = [word for word in text.split() if any(ch.isalpha() for ch in word)]

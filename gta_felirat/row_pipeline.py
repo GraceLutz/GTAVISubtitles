@@ -42,8 +42,8 @@ from .config import AppConfig
 from .fragment_filter import DIALOGUE_BOTTOM_RATIO, MIN_WHITE_FRACTION, Fragment, FrameCenter, select_subtitle
 from .line_placement import PENDING_HIDE_SECONDS, build_shown, match_lines
 from .objective_line import ObjectiveLine
-from .ocr import (Box, OcrLine, SubtitleReader, clean_ocr_text, is_spoken_line, looks_like_subtitle, spoken_lines,
-                  union_box)
+from .ocr import (Box, OcrLine, SubtitleReader, clean_ocr_text, is_spoken_line, looks_like_subtitle, sounds_spoken,
+                  spoken_lines, union_box)
 from .row_finder import band_edge_margin
 from .row_tracker import STABLE_CAPTURES, BandSnapshot, RowObs, RowText, is_same_place, overlaps
 from .subtitle_pipeline import SubtitlePipeline
@@ -80,6 +80,12 @@ class RowPathStats:
     stale_texts: int = 0  # közben eltűnt sor szövege: eldobtuk
     stale_snapshots: int = 0  # más ablakméretre készült pillanatkép: eldobtuk
     inherited_texts: int = 0  # ennyi új sor örökölte az előtte ugyanott álló sor szövegét
+
+
+def _is_spoken_subtitle(text: str, is_dim_text: bool) -> bool:
+    """A középen álló felirat kimondott szöveg-e: „Név: szöveg”, vagy név nélküli tévéműsor-felirat
+    (halvány betűvel, vagy beszédre valló mondat: kérdés, felkiáltás, első személy)."""
+    return is_spoken_line(text) or is_dim_text or sounds_spoken(text)
 
 
 def _lost_its_name(text: str) -> bool:
@@ -347,7 +353,7 @@ class RowPipeline(SubtitlePipeline):
                      for box, row in legible.items()]
         center = self._frame_center()
         kept = select_subtitle(fragments, center)
-        lines = self._subtitle_lines(kept, is_tv_text=bool(kept) and all(legible[part.box].dim for part in kept))
+        lines = self._subtitle_lines(kept, is_dim_text=bool(kept) and all(legible[part.box].dim for part in kept))
         used = list(kept) if lines else []
         is_free_waiting = False
         if self._config.whole_band_text:
@@ -398,16 +404,18 @@ class RowPipeline(SubtitlePipeline):
         return OcrLine(text, union_box([row.box for row in rows]))
 
     def _subtitle_lines(self, fragments: list[Fragment], *, must_be_spoken: bool = False,
-                        is_tv_text: bool = False) -> tuple[OcrLine, ...]:
+                        is_dim_text: bool = False) -> tuple[OcrLine, ...]:
         """A darabok megszólalásokká fűzve, ha a szövegük feliratnak tűnik; különben üres.
 
         must_be_spoken: csak „Név: szöveg” megszólalás lehet, az only_spoken_lines beállítástól függetlenül.
-        is_tv_text: a tévéműsor halvány felirata: kimondott szöveg, bár nincs előtte név."""
+        is_dim_text: halvány, szürkésfehér betű (a tévéműsor felirata)."""
         lines = spoken_lines([(fragment.text, fragment.box) for fragment in fragments])
         if not lines or not looks_like_subtitle(" ".join(line.text for line in lines)):
             return ()
-        must_be_spoken = must_be_spoken or (self._config.only_spoken_lines and not is_tv_text)
-        if must_be_spoken and not is_spoken_line("\n".join(line.text for line in lines)):
+        text = "\n".join(line.text for line in lines)
+        if must_be_spoken:
+            return lines if is_spoken_line(text) else ()
+        if self._config.only_spoken_lines and not _is_spoken_subtitle(text, is_dim_text):
             return ()  # küldetésszöveg, tábla, menü: nem kimondott szöveg, nem fordítjuk
         return lines
 

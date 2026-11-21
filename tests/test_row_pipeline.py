@@ -998,17 +998,23 @@ def test_translation_disappears_when_the_picture_stops_while_its_row_is_only_rem
 TV_LINE = "Noah. What is your name?"
 
 
-@pytest.mark.parametrize("is_dim, is_translated", [
-    pytest.param(True, True, id="dim tv subtitle"),
-    pytest.param(False, False, id="white nameless text"),
+@pytest.mark.parametrize("text, is_dim, is_translated", [
+    pytest.param(TV_LINE, True, True, id="dim tv subtitle"),
+    # Valós eset: a rajzfilm felirata hófehér, vékony betűs, körvonal nélküli, két sorban
+    pytest.param("If you come back without my money, I'll turn you into cowboy boots!", False, True,
+                 id="white tv subtitle that sounds spoken"),
+    pytest.param(TV_LINE, False, True, id="white question"),
+    pytest.param(MISSION, False, False, id="white mission text"),
+    pytest.param("Press the button to open the map.", False, False, id="white help text"),
+    pytest.param("Lose the cops", False, False, id="white objective"),
 ])
-def test_nameless_dim_tv_subtitle_is_spoken_text_too(make_scene, is_dim, is_translated):
+def test_nameless_tv_subtitle_is_spoken_text_too(make_scene, text, is_dim, is_translated):
     # Valós hiba: a tévéműsor feliratában nincs „Név:”, ezért a „Csak a kimondott szöveg” angolul hagyta
     scene = make_scene(only_spoken_lines=True)
     scene.show(1.0, row(1, LOWER, first_seen=1.0, dim=is_dim))
 
-    scene.read(1.04, (1, TV_LINE))
+    scene.read(1.04, (1, text))
     scene.translated(1.3)
 
-    assert (scene.backend.calls == [TV_LINE]) == is_translated
-    assert (scene.shown is not None and scene.shown.text == hu(TV_LINE)) == is_translated
+    assert (scene.backend.calls == [text]) == is_translated
+    assert (scene.shown is not None and scene.shown.text == hu(text)) == is_translated
