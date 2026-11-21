@@ -49,6 +49,36 @@ def test_next_subtitle_in_the_same_place_does_not_replace_the_current_one():
     assert history.for_frame(10.2, 11.2, [FrameRow(LOWER)]) == FIRST_HU
 
 
+def test_previous_translation_is_not_put_on_a_different_line_in_the_same_place():
+    # „Jason: This your spot, huh?” után ugyanott a jóval hosszabb „Stranger: I'm busy, you heard?” jön; a
+    # felismerés késik: a képkockán már az új sor áll, de a réteg még a régi fordítást mutatja
+    short_line, long_line = Box(828, 955, 1090, 991), Box(735, 955, 1177, 991)
+    previous = Shown("Ez a te helyed, mi?", short_line, (ShownLine("Ez a te helyed, mi?", short_line),))
+    covered = Shown("", long_line, (), (long_line,))
+    history = history_of((10.0, previous, "Jason"), (10.8, covered, "Jason"))
+
+    shown = history.for_frame(10.5, 11.5, [FrameRow(Box(723, 950, 1189, 996))])
+
+    assert shown.lines == () and shown.hidden
+
+
+def test_new_line_not_yet_recognised_gets_its_translation_instead_of_a_blank_cover():
+    # A sor megjelenésekor még nincs felismert felirat (forrás ""), a fordítása 0,6 mp múlva érkezik
+    history = history_of((10.0, COVER_ONLY, ""), (10.6, FIRST_HU, FIRST))
+
+    assert history.for_frame(10.0, 11.0, [FrameRow(LOWER)]) == FIRST_HU
+
+
+def test_only_known_translation_of_another_line_is_dropped_and_the_row_covered():
+    short_line, long_row = Box(828, 955, 1090, 991), Box(723, 950, 1189, 996)
+    previous = Shown("Ez a te helyed, mi?", short_line, (ShownLine("Ez a te helyed, mi?", short_line),))
+    history = history_of((10.0, previous, "Jason"))
+
+    shown = history.for_frame(10.5, 11.5, [FrameRow(long_row)])
+
+    assert shown.lines == () and long_row in shown.hidden
+
+
 def test_row_that_no_state_covers_gets_a_cover_instead_of_showing_english():
     history = history_of((10.0, FIRST_HU, FIRST))
 

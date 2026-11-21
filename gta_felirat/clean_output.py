@@ -15,6 +15,7 @@ import logging
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
@@ -23,7 +24,7 @@ import numpy as np
 
 from .band_capture import fits
 from .band_feed import client_box_in_frame
-from .clean_frame import FrameAnalysis, analyse, with_erased_rows, without_covers_over
+from .clean_frame import FrameAnalysis, analyse, with_erased_rows, with_neat_game_boxes, without_covers_over
 from .clean_history import HISTORY_SLACK_SECONDS, FrameBuffer, ShownHistory
 from .frosted_cover import Backdrop
 from .i18n import t
@@ -42,9 +43,27 @@ WINDOW_FLAGS = cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO
 # Az OpenCV a címet ANSI-ként írja ki (az ékezet elromlik), ezért csak ASCII belső nevet kap;
 # a látható címet utána Unicode-dal állítjuk be
 WINDOW_NAME = "GTA6Felirat-clean"
-ANALYSER_THREADS = 4  # sorkeresés és betűtörlés: képkockánként 50–150 ms, a 30 kép/mp-hez több szál kell
+ANALYSER_THREADS = 3  # sorkeresés és betűtörlés: képkockánként 30–120 ms, a 30 kép/mp-hez több szál kell
+# Ha a gép a játékkal van elfoglalva, nem halmozunk: ennyi függő elemzés fölött a képkocka elemzés nélkül
+# megy ki (elmosott takarással), és megjelenítéskor sem várunk tovább ennél
+MAX_PENDING_ANALYSES = 2 * ANALYSER_THREADS
+ANALYSIS_WAIT_SECONDS = 0.05
+THREAD_PRIORITY_BELOW_NORMAL = -1
 
 logger = logging.getLogger(__name__)
+
+
+def _lower_priority() -> None:
+    """Az elemző szálak a játék és a stream mögé sorolódnak (Windows-szálprioritás)."""
+    windll = getattr(ctypes, "windll", None)
+    if windll is not None:
+        windll.kernel32.SetThreadPriority(windll.kernel32.GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL)
+
+
+def _skipped() -> Future[FrameAnalysis]:
+    future: Future[FrameAnalysis] = Future()
+    future.set_result(FrameAnalysis(None))
+    return future
 
 
 @dataclass(frozen=True)
@@ -65,6 +84,8 @@ class CleanOutput:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._analysers: ThreadPoolExecutor | None = None
+        self._pending = 0  # a rögzítő szál számolja; a kész elemzés visszahívása csökkenti
+        self._pending_lock = threading.Lock()
 
     @property
     def is_running(self) -> bool:
@@ -90,7 +111,8 @@ class CleanOutput:
         title = WINDOW_NAME
         layer = SubtitleLayer(self._config, on_change=lambda _changes: None)
         frames = FrameBuffer(self._config.clean_output_delay_seconds + HISTORY_SLACK_SECONDS)
-        self._analysers = ThreadPoolExecutor(max_workers=ANALYSER_THREADS, thread_name_prefix="clean-rows")
+        self._analysers = ThreadPoolExecutor(max_workers=ANALYSER_THREADS, thread_name_prefix="clean-rows",
+                                             initializer=_lower_priority)
         cv2.namedWindow(title, WINDOW_FLAGS)
         _show_title(title, t("clean.window_title"))
         try:
@@ -119,6 +141,19 @@ class CleanOutput:
         finally:
             stream.close()
 
+    def _submit_analysis(self, image: np.ndarray) -> Future[FrameAnalysis]:
+        with self._pending_lock:
+            if self._pending >= MAX_PENDING_ANALYSES:
+                return _skipped()
+            self._pending += 1
+        future = self._analysers.submit(analyse, image, self._config)
+        future.add_done_callback(self._analysis_done)
+        return future
+
+    def _analysis_done(self, _future: Future[FrameAnalysis]) -> None:
+        with self._pending_lock:
+            self._pending -= 1
+
     def _grab(self, stream: WindowStream, frames: FrameBuffer, now: float) -> bool:
         with stream.frame() as frame_size:
             if frame_size is None:
@@ -127,7 +162,7 @@ class CleanOutput:
             if client is None or not fits(client, *frame_size):
                 return False
             image = stream.read_box(client)
-            frames.push(now, CapturedFrame(image, self._analysers.submit(analyse, image, self._config)))
+            frames.push(now, CapturedFrame(image, self._submit_analysis(image)))
         return True
 
     def _show(self, title: str, layer: SubtitleLayer, frames: FrameBuffer, now: float) -> None:
@@ -145,6 +180,7 @@ class CleanOutput:
         image, erased_rows = with_erased_rows(frame, analysis, shown)
         plan = layer.plan((width, height), shown, True, backdrop=Backdrop(image, Box(0, 0, width, height)))
         if plan is not None:
+            image = with_neat_game_boxes(image, plan, analysis, erased_rows)
             image = draw_on_frame(image, without_covers_over(plan, erased_rows))
         cv2.imshow(title, image)
 
@@ -153,7 +189,9 @@ def _analysis_of(captured: CapturedFrame, config: AppConfig) -> FrameAnalysis:
     if captured.analysis is None:
         return analyse(captured.image, config)
     try:
-        return captured.analysis.result()
+        return captured.analysis.result(timeout=ANALYSIS_WAIT_SECONDS)
+    except FutureTimeout:
+        return FrameAnalysis(None)  # nem várunk rá: a játék elsőbb; ez a képkocka az idő szerint takar
     except (ValueError, cv2.error) as err:
         logger.warning("Clean picture row search failed: %s", err)
         return FrameAnalysis(None)  # ilyenkor az idő szerint döntünk, mint az élő réteg

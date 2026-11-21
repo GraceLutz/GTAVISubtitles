@@ -44,8 +44,13 @@ _GRAIN_RNG = np.random.default_rng(1)  # rögzített mag: a teszt és a futás u
 
 
 def _difference(strip: np.ndarray) -> np.ndarray:
-    background = cv2.medianBlur(strip, BACKGROUND_KERNEL)
-    return np.abs(strip.astype(np.int16) - background.astype(np.int16)).max(axis=2)
+    """Képpontonként a legnagyobb színeltérés a betűk nélküli háttértől (a háttérbecslés fél felbontáson:
+    negyed annyi munka, a betűknél jóval nagyobb szerkezetet úgyis csak durván kell követnie)."""
+    height, width = strip.shape[:2]
+    small = cv2.resize(strip, (max(1, width // 2), max(1, height // 2)), interpolation=cv2.INTER_AREA)
+    background = cv2.medianBlur(small, BACKGROUND_KERNEL // 2 | 1)
+    background = cv2.resize(background, (width, height), interpolation=cv2.INTER_LINEAR)
+    return cv2.absdiff(strip, background).max(axis=2)
 
 
 def _columns(strong: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -141,8 +146,13 @@ def _grain(crop: np.ndarray, mask: np.ndarray) -> np.ndarray:
 def _fill(crop: np.ndarray, mask: np.ndarray, frame_width: int) -> None:
     """A maszkolt képpontok kitöltése a környezetből, a vízszintes élek továbbvitelével, a háttér szemcséivel
     (különben sima folt maradna a mintás háttéren), puha széllel."""
-    filled = cv2.inpaint(crop, mask, INPAINT_RADIUS, cv2.INPAINT_TELEA)
-    filled = follow_horizontal_edges(crop, mask, filled, frame_width)
+    # Fél felbontáson: negyed annyi munka (a tiszta kép 30 kép/mp-vel fut a játék mellett)
+    small = cv2.resize(crop, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
+    small_mask = (cv2.resize(mask, (small.shape[1], small.shape[0]), interpolation=cv2.INTER_AREA) > 0)
+    small_mask = small_mask.astype(np.uint8)
+    filled = cv2.inpaint(small, small_mask, INPAINT_RADIUS, cv2.INPAINT_TELEA)
+    filled = follow_horizontal_edges(small, small_mask, filled, frame_width // 2)
+    filled = cv2.resize(filled, (crop.shape[1], crop.shape[0]), interpolation=cv2.INTER_LINEAR)
     filled += _grain(crop, mask)
     soft = cv2.GaussianBlur(mask.astype(np.float32), (3, 3), 0)[..., None]
     crop[:] = np.clip(crop * (1.0 - soft) + filled * soft, 0, 255).astype(np.uint8)

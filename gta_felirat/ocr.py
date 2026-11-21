@@ -55,6 +55,8 @@ CAPTION_ROW = re.compile(r"^[\[(][^\])]*[\])]$|[♪♫]")
 # A sor elején magában álló kettőspont vagy pontosvessző (a beszélő neve nélkül maradt)
 LEADING_ORPHAN_PUNCTUATION = re.compile(r"^\s*[:;]+\s*")
 # A telefonhívás kijelzője a sor végén: „… alright? Jason 00:05 D”
+# A felirat háttérdobozának széle a mondatvégre tapadva: „huh?3”, „heard?湖”
+GLUED_TAIL = re.compile(r"([.!?…][\"'”’)]*)(?:\d|[^\x00-\u024F]){1,%d}$" % MAX_ICON_CHARS)
 CALL_TIMER_TAIL = re.compile(r"\s+(?:[A-Z][\w'.-]*\s+){0,2}\d{1,2}:\d{2}(?:\s+\S{1,2})*\s*$")
 
 
@@ -176,13 +178,19 @@ def drop_trailing_icons(text: str) -> str:
     return " ".join(tokens)
 
 
+def drop_glued_tail(text: str) -> str:
+    """Levágja a lezárt mondat végére szóköz nélkül tapadt számjegyet vagy nem latin jelet („huh?3”)."""
+    return GLUED_TAIL.sub(r"\1", text)
+
+
 def fix_speaker_colon(text: str) -> str:
     """A beszélő neve utáni, pontosvesszőnek olvasott kettőspont visszaállítása."""
     return MISREAD_SPEAKER_COLON.sub(r"\1:", text)
 
 
 def clean_ocr_text(text: str) -> str:
-    return drop_trailing_icons(drop_call_timer(drop_leading_fragment(fix_speaker_colon(strip_stray_glyphs(text)))))
+    text = drop_leading_fragment(fix_speaker_colon(strip_stray_glyphs(text)))
+    return drop_glued_tail(drop_trailing_icons(drop_call_timer(text)))
 
 
 def is_spoken_line(text: str) -> bool:

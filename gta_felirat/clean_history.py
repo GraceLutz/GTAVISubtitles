@@ -16,16 +16,21 @@ from collections import deque
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from .layer_plan import Shown
+from .layer_plan import Shown, ShownLine
 
 if TYPE_CHECKING:
     import numpy as np
 
+    from .game_box import GameBox
     from .ocr import Box
 
 SETTLE_SECONDS = 0.4  # ennyi idő alatt a pipeline biztosan felismeri és megerősíti a képen megjelent feliratot
 HISTORY_SLACK_SECONDS = 1.0  # a késleltetésen túl ennyi régebbi állapotot is megtartunk
 MIN_COVER_RATIO = 0.5  # a sor magasságának és szélességének ekkora részét fedje a takarás vagy a fordítás
+# Egy fordítás csak hasonló szélességű sorhoz tartozhat: ugyanott a következő, más hosszú felirat már nem az övé.
+# A képkocka sora a teljes szöveg szélessége plusz ráhagyás, az angol sor helye a felismert szöveg, ezért a tűrés.
+WIDTH_TOLERANCE = 0.2
+WIDTH_SLACK_PX = 30
 
 
 @dataclass(frozen=True)
@@ -35,6 +40,7 @@ class FrameRow:
     # A sorkereső biztos benne, hogy feliratsor: akkor is takarjuk, ha egyik állapot sem fedi. A bizonytalan
     # sort (pl. rendszámtábla) csak akkor, ha valamelyik közeli állapot fordította vagy takarta
     sure: bool = True
+    game_box: GameBox | None = None  # a játék sötét feliratdoboza a sor mögött (game_box)
 
 
 @dataclass(frozen=True)
@@ -97,6 +103,18 @@ def is_covered(row: Box, boxes: list[Box]) -> bool:
     return False
 
 
+def is_same_line(row: Box, anchor: Box) -> bool:
+    """A fordítás angol sora (anchor) lehet-e a képkocka sora: fedi, és hasonló széles."""
+    widest = max(row.width, anchor.width)
+    return is_covered(row, [anchor]) and abs(row.width - anchor.width) <= WIDTH_TOLERANCE * widest + WIDTH_SLACK_PX
+
+
+def _translates(shown: Shown, row: Box) -> bool:
+    if shown.lines:
+        return any(is_same_line(row, line.anchor) for line in shown.lines)
+    return is_covered(row, text_boxes(shown))
+
+
 def text_boxes(shown: Shown) -> list[Box]:
     """Ahol fordítás áll: soronként, vagy egy tömbben az eredeti felirat helyén."""
     if shown.lines:
@@ -107,8 +125,10 @@ def text_boxes(shown: Shown) -> list[Box]:
 def _score(entry: ShownEntry, rows: list[Box], source: str, order: int) -> tuple:
     shown = entry.shown
     anchors = text_boxes(shown)
-    missing = sum(not is_covered(row, anchors + list(shown.hidden)) for row in rows)
-    translated = sum(is_covered(row, anchors) for row in rows)
+    translated_rows = [_translates(shown, row) for row in rows]
+    missing = sum(not (translates or is_covered(row, list(shown.hidden)))
+                  for row, translates in zip(rows, translated_rows))
+    translated = sum(translated_rows)
     stray = sum(not any(is_covered(row, [anchor]) or is_covered(anchor, [row]) for row in rows)
                 for anchor in anchors)  # fordítás ott, ahol a képen nincs sor
     # Elöl a fedés, aztán hogy ugyanaz a felirat-e, aztán a fordítás; egyenlőségnél a korábbi (a következő
@@ -116,12 +136,32 @@ def _score(entry: ShownEntry, rows: list[Box], source: str, order: int) -> tuple
     return (-missing, entry.source == source, translated, -stray, -order)
 
 
+def _without_lines_of_other_rows(shown: Shown, rows: list[Box]) -> Shown | None:
+    """Elhagyja azokat a fordított sorokat, amelyek helyén a képkockán egy más (eltérő szélességű) sor áll."""
+    def belongs_elsewhere(line: ShownLine) -> bool:
+        return any(is_covered(row, [line.anchor]) and not is_same_line(row, line.anchor) for row in rows)
+
+    kept = tuple(line for line in shown.lines if not belongs_elsewhere(line))
+    if kept == shown.lines:
+        return shown
+    if not kept and not shown.hidden:
+        return None
+    anchor = _union([line.anchor for line in kept] or list(shown.hidden))
+    return replace(shown, text="\n".join(line.text for line in kept), anchor=anchor, lines=kept)
+
+
 def pick_shown(entries: list[ShownEntry], rows: list[FrameRow], source: str) -> Shown | None:
     """Az az állapot, amelyik a képkocka sorait fedi, lehetőleg fordítással; a fedetlen feliratsorokra
     takarás kerül."""
     found = [row.box for row in rows]
+    if not source:
+        # A felismerés még nem ért utol: annak a feliratnak a fordítása kell, amelyik elsőként fordítja a sort
+        source = next((entry.source for entry in entries
+                       if any(_translates(entry.shown, row) for row in found)), "")
     best = max(entries, key=lambda entry: _score(entry, found, source, entries.index(entry)), default=None)
     shown = best.shown if best is not None else None
+    if shown is not None and shown.lines:
+        shown = _without_lines_of_other_rows(shown, found)
     boxes = [] if shown is None else text_boxes(shown) + list(shown.hidden)
     known = [box for entry in entries for box in text_boxes(entry.shown) + list(entry.shown.hidden)]
     missing = tuple(row.box for row in rows

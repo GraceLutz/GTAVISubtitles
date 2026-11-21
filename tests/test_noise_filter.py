@@ -69,6 +69,18 @@ def test_semicolon_read_after_a_speaker_name_is_a_colon(raw, cleaned):
     assert clean_ocr_text(raw) == cleaned
 
 
+@pytest.mark.parametrize("raw, cleaned", [
+    # A felirat sötét háttérdobozának szélét a mondat végére tapadt jelnek olvassa az OCR
+    ("Jason: This your spot, huh?3", "Jason: This your spot, huh?"),
+    ("Stranger: I'm busy, you heard?湖", "Stranger: I'm busy, you heard?"),
+    ("Stranger: Soft ass.1", "Stranger: Soft ass."),
+    ("Go to Unit 3.", "Go to Unit 3."),
+    ("Jason: Hey!", "Jason: Hey!"),
+])
+def test_glyph_glued_after_the_sentence_end_is_dropped(raw, cleaned):
+    assert clean_ocr_text(raw) == cleaned
+
+
 @pytest.mark.parametrize("text", [
     "Játék indítása",
     "Játék indítása 12 órája",
