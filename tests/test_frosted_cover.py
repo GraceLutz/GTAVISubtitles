@@ -85,6 +85,29 @@ def test_dim_grey_tv_subtitle_is_erased_too():
     assert patch[52:68, 150:450].max() < 120
 
 
+GREY_INTERJECTION = 140  # a beszélő nélküli szürke közbeszólás betűje (valós felvételen 118–149)
+
+
+@pytest.mark.parametrize("with_white_row", [False, True], ids=["alone", "under a white row"])
+def test_grey_interjection_letters_are_erased_too(with_white_row):
+    # Valós hiba: a „Don't worry. It'll be easy.” szürke betűi átlátszottak a fordításon
+    source = np.full((120, 600, 3), 30, np.uint8)
+    if with_white_row:
+        for x in range(150, 450, 10):
+            source[10:26, x:x + 3] = 255
+    for x in range(150, 450, 10):
+        source[60:76, x:x + 3] = GREY_INTERJECTION
+    patch = frosted_patch(source, FEATHER, strength=0.0)
+    assert patch[60:76, 150:450].max() < 100
+
+
+def test_thick_grey_surface_near_dark_is_not_taken_for_a_letter():
+    source = np.full((120, 600, 3), 30, np.uint8)
+    source[40:80, 150:450] = GREY_INTERJECTION  # szürke fal, nem betű
+    patch = frosted_patch(source, FEATHER, strength=0.0)
+    assert np.array_equal(patch[50:70, 200:400], source[50:70, 200:400])
+
+
 def test_patch_on_all_bright_background_does_not_fail():
     source = np.full((80, 300, 3), 240, np.uint8)
     patch = frosted_patch(source, FEATHER)

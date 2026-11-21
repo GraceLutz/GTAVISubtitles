@@ -30,6 +30,8 @@ DIM_TEXT_LEVEL = 150
 TEXT_TOP_PERCENTILE = 99.5  # a betűk legalább a takart terület ennyi „tetején” vannak
 TEXT_LEVEL_MARGIN = 25  # ennyivel a legvilágosabb pixelek alatt még a betű magja
 MAX_GREY_SPREAD = 40  # a halvány betű szürkésfehér: a színcsatornái közel egyformák
+# A beszélő nélküli szürke közbeszólás betűje (valós felvételen 118–149; a sorkereső szintje 95)
+GREY_TEXT_LEVEL = 110
 MIN_BLUR_SIGMA = 6.0
 BLUR_SIGMA_RATIO = 0.35  # a takarás magasságához képest
 BLUR_DOWNSCALE = 4  # ennyiszer kisebb képen mosunk el
@@ -75,8 +77,20 @@ def _text_mask(source: np.ndarray) -> np.ndarray:
     letters = (darkest >= level) & has_dark_nearby
     if level < TEXT_LEVEL:
         letters &= cv2.subtract(brightest, darkest) <= MAX_GREY_SPREAD
-    letters |= _name_letters(brightest, darkest, _name_stroke_px(source.shape[0])) & has_dark_nearby
+    stroke_px = _name_stroke_px(source.shape[0])
+    letters |= _name_letters(brightest, darkest, stroke_px) & has_dark_nearby
+    letters |= _grey_letters(brightest, darkest, stroke_px) & has_dark_nearby
     return cv2.dilate(letters.astype(np.uint8), _TEXT_GROW_KERNEL)
+
+
+def _grey_letters(brightest: np.ndarray, darkest: np.ndarray, stroke_px: int) -> np.ndarray:
+    """A beszélő nélküli szürke közbeszólás betűi: szürke (közel egyforma csatornák), vékony szárú.
+
+    A fehér sor melletti szürke sor a betűküszöb (a legvilágosabb pixelekhez igazodik) alatt marad, ezért
+    külön keressük; a vastag szürke felület (fal, póló) nem betű."""
+    grey = ((darkest >= GREY_TEXT_LEVEL) & (cv2.subtract(brightest, darkest) <= MAX_GREY_SPREAD)).astype(np.uint8)
+    thick = cv2.morphologyEx(grey, cv2.MORPH_OPEN, _disc(stroke_px // 2))
+    return (grey > 0) & (cv2.dilate(thick, _disc(stroke_px)) == 0)
 
 
 def _name_stroke_px(height: int) -> int:

@@ -536,6 +536,24 @@ def test_two_row_line_keeps_its_translation_while_one_row_is_detected_anew_somew
     assert scene.backend.calls == [whole]  # a maradékot nem fordítjuk külön
 
 
+def test_row_read_without_its_speaker_name_stays_hidden_until_it_is_read_with_the_name(make_scene):
+    # Világos háttér előtt a színes beszélőnév kimaradt a sor dobozából: az olvasat „: He's too…”
+    scene = make_scene(only_spoken_lines=True)
+    said, other = "He's too fucked up. No way he's getting up there.", "I came back here to get dressed!"
+    scene.show(1.0, row(1, UPPER, first_seen=1.0), row(2, LOWER, first_seen=1.0))
+    scene.read(1.04, (1, f": {said}"), (2, f"Mario: {other}"))
+    scene.translated(1.3)
+    nameless = scene.shown
+
+    scene.show(1.4, row(3, UPPER, first_seen=1.4), row(2, LOWER, first_seen=1.0, stable=20))
+    scene.read(1.45, (3, f"Final Chapter: {said}"))
+    scene.translated(1.7)
+
+    assert nameless is not None and UPPER in nameless.hidden  # az angol sor nem látszik
+    assert not any(":" in call for call in scene.backend.calls)  # a név nélküli töredéket nem fordítjuk
+    assert [line.text for line in scene.shown.lines] == [f"Final Chapter: {hu(said)}", f"Mario: {hu(other)}"]
+
+
 def test_two_row_line_keeps_its_translation_while_one_row_drops_out_for_a_capture(make_scene):
     scene = make_scene(only_spoken_lines=True)
     said, second = "No, no... She's not a rat.", "She's just desperate because of Jordy."

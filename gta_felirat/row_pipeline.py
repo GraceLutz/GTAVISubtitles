@@ -82,6 +82,11 @@ class RowPathStats:
     inherited_texts: int = 0  # ennyi új sor örökölte az előtte ugyanott álló sor szövegét
 
 
+def _lost_its_name(text: str) -> bool:
+    """A sor olvasata kettősponttal kezdődik: a beszélő neve lemaradt a dobozból."""
+    return text.lstrip().startswith(":")
+
+
 def _plain(text: str) -> str:
     """Összevetéshez: kisbetűs, egyszeres szóközökkel (a sortörés is szóköz)."""
     return " ".join(text.lower().split())
@@ -258,6 +263,9 @@ class RowPipeline(SubtitlePipeline):
 
     def _take_texts(self, texts: Sequence[RowText], now: float) -> bool:
         alive = {row.row_id for row in self._rows}
+        # A színes beszélőnév világos háttér előtt egy-egy képen kimarad a sor dobozából: a név nélküli olvasat
+        # („: He's too…”) nem a sor szövege, a sor olvasatlan marad (takarva), amíg a nevével együtt meg nem találjuk
+        texts = [item for item in texts if not _lost_its_name(item.text)]
         fresh = {item.row_id: item for item in texts if item.row_id in alive}
         for item in texts:
             heir = self._heir_of(item.row_id)

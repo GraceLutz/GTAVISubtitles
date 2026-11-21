@@ -1,6 +1,7 @@
 from dataclasses import replace
 
 import cv2
+import numpy as np
 import pytest
 from band_drawing import (AREA, CENTER_X, DIALOGUE_BASELINE, FONT, FONT_SCALE, FRAME, GREEN, OBJECTIVE_BASELINE, PINK,
                           UPPER_BASELINE, band_with, band_with_parts)
@@ -159,6 +160,8 @@ def test_off_white_named_row_over_a_bright_scene_is_found_whole_and_sure(soft_wh
 @pytest.mark.parametrize("parts", [
     pytest.param([("Go to your ", WHITE), ("car", PINK)], id="coloured keyword at the end"),
     pytest.param([("Lose the cops", WHITE)], id="all white"),
+    # A hosszú kulcsszó a fehér részt messze a középtől balra tolja
+    pytest.param([("Find a way ", WHITE), ("backstage", PINK)], id="long coloured keyword"),
 ])
 def test_bold_objective_row_is_found_with_its_whole_text(parts):
     band = band_with_parts(parts, OBJECTIVE_BASELINE, thickness=2)
@@ -168,3 +171,40 @@ def test_bold_objective_row_is_found_with_its_whole_text(parts):
     left, right = text_span(parts, thickness=2)
     assert len(rows) == 1 and not rows[0].sure
     assert rows[0].box.left <= left and rows[0].box.right >= right
+
+
+def test_coloured_background_after_the_keyword_does_not_widen_the_objective_row():
+    # A színes kulcsszó mögött színes háttérfolt (lámpa, plakát) tapad a sorhoz: a sor a fehér eleje tükörképéig tart
+    parts = [("Find a way ", WHITE), ("backstage", PINK)]
+    band = band_with_parts(parts, OBJECTIVE_BASELINE, thickness=2)
+    left, right = text_span(parts, thickness=2)
+    blob = np.zeros(band.shape[:2], np.uint8)
+    cv2.putText(blob, "oooo", (round(right - AREA.left) + 25, OBJECTIVE_BASELINE), FONT, FONT_SCALE, 255, 2,
+                cv2.LINE_AA)
+    band[cv2.dilate(blob, np.ones((5, 5), np.uint8)) > 0] = 0
+    band[blob > 0] = PINK
+
+    rows = ROW_FINDER.detect(band, AREA, FRAME)
+
+    assert len(rows) == 1
+    assert rows[0].box.left <= left and right <= rows[0].box.right < right + 20
+
+
+BIGGER_OBJECTIVE_FONT = 0.85  # az ablakból rögzített képen a küldetéssor betűje vastagabb (vonalvastagság ~4,7–5)
+
+
+def test_objective_row_with_thicker_letters_is_found():
+    band = band_with_parts([("Lose the cops", WHITE)], OBJECTIVE_BASELINE, thickness=2,
+                           font_scale=BIGGER_OBJECTIVE_FONT)
+
+    rows = ROW_FINDER.detect(band, AREA, FRAME)
+
+    assert len(rows) == 1 and not rows[0].sure
+
+
+def test_white_text_off_the_centre_in_the_objective_strip_is_not_an_objective_row():
+    # Egy balra álló, a középig sem érő fehér szöveg (pl. kijelzőfelirat) nem küldetéssor, ha színes rész sem
+    # egészíti ki középre
+    band = band_with_parts([("Lose the cops", WHITE), (" " * 30, WHITE)], OBJECTIVE_BASELINE, thickness=2)
+
+    assert ROW_FINDER.detect(band, AREA, FRAME) == []

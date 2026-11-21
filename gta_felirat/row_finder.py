@@ -28,12 +28,16 @@ MIN_FRAME_WIDTH = 1600
 OBJECTIVE_STRIP_ABOVE_RATIO = 0.01
 OBJECTIVE_STRIP_MIN_RATIO = 0.04
 # A küldetésutasítás betűje vastagabb vonalú a párbeszédénél: a magpixelek átlagos futáshossza (vonalvastagság)
-# 1080p-s felvételen 3,1–4,0 px (a párbeszédé 1,55–2,7, a kereső határa 3,2), és ritkábbak a vonásai
-OBJECTIVE_MAX_RUN = 4.6
+# 1080p-s videófelvételen 3,1–4,0 px, az ablakból rögzített képen 4,2–5,0 px (a párbeszédé 1,55–2,7, a kereső
+# határa 3,2), és ritkábbak a vonásai
+OBJECTIVE_MAX_RUN = 5.6
 OBJECTIVE_MIN_STROKE_DENSITY = 0.05
 # A küldetéssor színes kulcsszava („Go to your car”) és gombikonja („Hold [gomb] to …”) nincs a fehér betűmagban:
 # a sor teljes szövegét az ennél nem nagyobb réseken át mérjük (az ikon ~45 képpont), és a kép közepére tükrözzük
 OBJECTIVE_MAX_GAP = 60.0
+# A hosszú színes kulcsszó („Find a way backstage”) a fehér részt messze a középtől félre tolja: a kereső ennyire
+# félre álló fehér részt is elfogad, a sor a teljes szövegével mérve áll középen (a párbeszédsor határán belül)
+OBJECTIVE_WHITE_OFFSET = 300.0
 
 _Signed = tuple[Signature, float]  # (a sor képpontjai, a kép szélessége a 1920-hoz mérve)
 
@@ -64,22 +68,33 @@ def _objective_rows(band: np.ndarray, area: Box, frame_size: tuple[int, int], pa
     strip = np.ascontiguousarray(band[top:])
     detection = detect(strip, area.left, frame_width,
                        replace(params, whole_band=False, max_run=OBJECTIVE_MAX_RUN,
-                               min_stroke_density=OBJECTIVE_MIN_STROKE_DENSITY))
+                               min_stroke_density=OBJECTIVE_MIN_STROKE_DENSITY, accept_offset=OBJECTIVE_WHITE_OFFSET))
     center_x = frame_width / 2 - area.left
-    below = replace(detection, rows=tuple(_centred_whole(strip, row, area.left, frame_width, center_x, params)
-                                          for row in detection.rows
-                                          if (row.top + row.bottom) / 2 + top > dialogue_bottom))
+    wholes = (_centred_whole(strip, row, area.left, frame_width, center_x, params)
+              for row in detection.rows if (row.top + row.bottom) / 2 + top > dialogue_bottom)
+    below = replace(detection, rows=tuple(row for row in wholes if row is not None))
     return [replace(row, sure=False) for row in _detected_rows(below, strip, area, frame_width, top)]
 
 
 def _centred_whole(strip: np.ndarray, row: Row, band_left: int, frame_width: int, center_x: float,
-                   params: Params) -> Row:
+                   params: Params) -> Row | None:
     """A küldetéssor a teljes szövegével: a játék az egész sort (színes kulcsszóval, gombikonnal) igazítja
-    középre, ezért a betűk legtávolabbi széle a kép közepére tükrözve adja a sor két végét."""
+    középre, ezért a betűk legtávolabbi széle a kép közepére tükrözve adja a sor két végét.
+
+    Ha a fehér rész nem áll középen, a sort a színes kulcsszó egészíti ki középre („Find a way backstage”):
+    ekkor a középhez közelebbi vég tükörképe a sor másik vége, mert a túlsó végnél a kulcsszó mögötti színes
+    háttér is a szöveghez tapadhat. None, ha a fehér rész így sem fér a középre igazított sorba: az nem küldetéssor."""
     left, right = text_extent(strip, row, band_left, frame_width, OBJECTIVE_MAX_GAP, params)
-    half = max(center_x - left, right - center_x)
-    ink_left, ink_right = max(0, int(center_x - half)), min(strip.shape[1], int(np.ceil(center_x + half)))
     scale = frame_width / REFERENCE_WIDTH
+    is_white_centred = abs((row.ink_left + row.ink_right) / 2 - center_x) <= params.accept_offset * scale
+    if is_white_centred:
+        half = max(center_x - left, right - center_x)
+    else:
+        half = min(center_x - left, right - center_x)
+        slack = params.trim_slack * scale
+        if row.ink_left < center_x - half - slack or row.ink_right > center_x + half + slack:
+            return None
+    ink_left, ink_right = max(0, int(center_x - half)), min(strip.shape[1], int(np.ceil(center_x + half)))
     return replace(row, ink_left=ink_left, ink_right=ink_right,
                    left=max(0, ink_left - round(params.pad_left * scale)),
                    right=min(strip.shape[1], ink_right + round(params.pad_right * scale)))

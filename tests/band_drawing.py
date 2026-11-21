@@ -22,17 +22,17 @@ PINK = (150, 110, 235)  # a küldetésutasítás kiemelt kulcsszavának színe (
 GREEN = (170, 200, 90)  # a beszélőnév színe (BGR)
 
 
-def band_with_parts(parts, baseline, *, thickness=1, background=40, seed=1):
+def band_with_parts(parts, baseline, *, thickness=1, background=40, seed=1, font_scale=FONT_SCALE):
     """Egy sor (szöveg, BGR szín) darabokból, egészében középre igazítva: színes beszélőnév vagy a küldetésutasítás
     színes kulcsszava; thickness: a vonalvastagság (a küldetésutasítás betűje vastagabb, 2)."""
     noise = np.random.default_rng(seed).integers(-12, 13, (AREA.height, AREA.width, 3))
     band = np.clip(background + noise, 0, 255).astype(np.uint8)
-    widths = [cv2.getTextSize(text, FONT, FONT_SCALE, thickness)[0][0] for text, _colour in parts]
+    widths = [cv2.getTextSize(text, FONT, font_scale, thickness)[0][0] for text, _colour in parts]
     x = round(CENTER_X - sum(widths) / 2)
     side = 2 * OUTLINE_PX + 1
     for (text, colour), width in zip(parts, widths):
         letters = np.zeros(band.shape[:2], np.uint8)
-        cv2.putText(letters, text, (x, baseline), FONT, FONT_SCALE, 255, thickness, cv2.LINE_AA)
+        cv2.putText(letters, text, (x, baseline), FONT, font_scale, 255, thickness, cv2.LINE_AA)
         band[cv2.dilate(letters, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (side, side))) > 0] = 0
         alpha = letters[:, :, None] / 255.0
         band[:] = (band * (1.0 - alpha) + np.array(colour) * alpha + 0.5).astype(np.uint8)
