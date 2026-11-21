@@ -144,7 +144,7 @@ MESSAGES: dict[str, str] = {
     "vault.load_failed": "Couldn't read the {name} key (Windows error {code})",
     "vault.save_failed": "Couldn't save the {name} key (Windows error {code})",
     "vault.delete_failed": "Couldn't delete the {name} key (Windows error {code})",
-    "cli.help_auto": "find the source automatically: PS Remote Play, Veyra, then a capture card (the exe's default)",
+    "cli.help_auto": "find the source automatically: Veyra, PS Remote Play, then a capture card (the exe's default)",
     "cli.help_capture_api": "how to open the capture card: auto, dshow (DirectShow) or msmf (Media Foundation)",
     "cli.device_no_picture": "opens, but gives no picture",
     "cli.auto_device": "Capture card: device {index} ({api}).",

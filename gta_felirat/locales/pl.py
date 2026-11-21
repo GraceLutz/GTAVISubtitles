@@ -144,7 +144,7 @@ MESSAGES: dict[str, str] = {
     "vault.load_failed": "Nie udało się odczytać klucza {name} (błąd Windows {code})",
     "vault.save_failed": "Nie udało się zapisać klucza {name} (błąd Windows {code})",
     "vault.delete_failed": "Nie udało się usunąć klucza {name} (błąd Windows {code})",
-    "cli.help_auto": "automatyczne wyszukiwanie źródła: PS Remote Play, Veyra, potem karta przechwytywania (domyślnie w exe)",
+    "cli.help_auto": "automatyczne wyszukiwanie źródła: Veyra, PS Remote Play, potem karta przechwytywania (domyślnie w exe)",
     "cli.help_capture_api": "sposób otwarcia karty przechwytywania: auto, dshow (DirectShow) lub msmf (Media Foundation)",
     "cli.device_no_picture": "otwiera się, ale nie daje obrazu",
     "cli.auto_device": "Karta przechwytywania: urządzenie {index} ({api}).",

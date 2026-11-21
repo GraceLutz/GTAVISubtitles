@@ -21,6 +21,8 @@ from .ocr import Box
 DPI_AWARENESS_PER_MONITOR = 2
 GA_ROOT = 2
 DWMWA_CLOAKED = 14
+# A cím elején megadott szó után ezek a szó folytatásai (pl. „Veyra-NRVideo”), nem új szó kezdete
+WORD_CONTINUATION = "-_/."
 # Ilyen sűrű rácson nézzük meg, mi van legfelül a feliratsávban (egy keskeny csík se csússzon át)
 OCCLUSION_SAMPLE_SPACING_PX = 40
 OCCLUSION_SAMPLE_ROWS = 3
@@ -87,12 +89,22 @@ def choose_window(title: str, windows: Collection[VisibleWindow], *, by_start: b
     """
     wanted = title.strip()
     exact = [window for window in windows if wanted and window.title == wanted]
-    starting = [window for window in windows
-                if by_start and wanted and window.title.casefold().startswith(wanted.casefold())]
+    starting = [window for window in windows if by_start and wanted and _starts_with_word(window.title, wanted)]
     matches = exact or starting
     if not matches:
         raise WindowNotFoundError(t("capture.window_not_found", title=title))
     return max(matches, key=lambda window: window.area).hwnd
+
+
+def _starts_with_word(title: str, wanted: str) -> bool:
+    """A cím így kezdődik, és utána szóköz vagy írásjel jön, nem a szó folytatása (kis- és nagybetű mindegy).
+
+    „Veyra 2.2.0” és „Veyra — 采集卡 · LIVE” igen, egy „Veyra-NRVideo …” című böngészőlap nem.
+    """
+    if not title.casefold().startswith(wanted.casefold()):
+        return False
+    rest = title[len(wanted):]
+    return not rest or not (rest[0].isalnum() or rest[0] in WORD_CONTINUATION)
 
 
 def _visible_windows() -> list[VisibleWindow]:

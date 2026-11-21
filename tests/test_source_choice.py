@@ -7,13 +7,13 @@ WEBCAM_BUSY = FoundDevice("dshow", 0, None)
 CARD = FoundDevice("dshow", 1, (1920, 1080))
 
 
-def test_running_remote_play_is_used_first():
-    assert choose_source(True, True, [HAMA]) == WindowSource("PS Remote Play", by_start=False)
+def test_running_veyra_is_used_first_even_with_remote_play_open():
+    # Ha a Veyra fut, abban nézed a játékot; a Remote Play mellette nyitva maradhat
+    assert choose_source(True, True, [HAMA]) == WindowSource("Veyra", by_start=True)
 
 
-def test_veyra_window_is_used_when_remote_play_is_not_running():
-    # A Veyra címe a forrástól függ („Veyra — 采集卡 · LIVE”, „Veyra — PS5 Remote Play”): az elejére illesztünk
-    assert choose_source(False, True, [HAMA]) == WindowSource("Veyra —", by_start=True)
+def test_remote_play_is_used_without_veyra():
+    assert choose_source(True, False, [HAMA]) == WindowSource("PS Remote Play", by_start=False)
 
 
 def test_single_capture_card_is_used_without_any_window():

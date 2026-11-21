@@ -9,9 +9,12 @@ from gta_felirat.ocr import region_to_box
 FRAME = (1920, 1080)
 AREA = region_to_box(Region(), *FRAME)
 CENTER_X = FRAME[0] // 2 - AREA.left  # a kép közepe a sáv koordinátáiban
-DIALOGUE_BASELINE = 140  # a legalsó párbeszédsor alapvonala a sávban
-UPPER_BASELINE = 97  # a fölötte álló párbeszédsoré
-OBJECTIVE_BASELINE = 200  # a küldetésutasítás sora a párbeszédsorok alatt
+# A sorok ott állnak a képen, ahol a játékban (a kép tetejétől mérve); a sávban ebből lesz az alapvonaluk,
+# így a tesztek az olvasási sáv magasságától függetlenül a valódi elrendezést rajzolják
+_GAME_ROWS_TOP = 842  # 1080 magas képen ide esett a régi, 78%-nál kezdődő sáv teteje
+DIALOGUE_BASELINE = _GAME_ROWS_TOP + 140 - AREA.top  # a legalsó párbeszédsor alapvonala a sávban
+UPPER_BASELINE = _GAME_ROWS_TOP + 97 - AREA.top  # a fölötte álló párbeszédsoré
+OBJECTIVE_BASELINE = _GAME_ROWS_TOP + 200 - AREA.top  # a küldetésutasítás sora a párbeszédsorok alatt
 FONT, FONT_SCALE, OUTLINE_PX = cv2.FONT_HERSHEY_SIMPLEX, 0.76, 2  # ekkora cv2-betű hasonlít a játék feliratára
 
 

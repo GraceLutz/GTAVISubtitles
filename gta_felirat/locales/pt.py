@@ -146,7 +146,7 @@ MESSAGES: dict[str, str] = {
     "vault.load_failed": "Não foi possível ler a chave {name} (erro do Windows {code})",
     "vault.save_failed": "Não foi possível salvar a chave {name} (erro do Windows {code})",
     "vault.delete_failed": "Não foi possível excluir a chave {name} (erro do Windows {code})",
-    "cli.help_auto": "procurar a fonte automaticamente: PS Remote Play, Veyra e depois a placa de captura (padrão do exe)",
+    "cli.help_auto": "procurar a fonte automaticamente: Veyra, PS Remote Play e depois a placa de captura (padrão do exe)",
     "cli.help_capture_api": "como abrir a placa de captura: auto, dshow (DirectShow) ou msmf (Media Foundation)",
     "cli.device_no_picture": "abre, mas não dá imagem",
     "cli.auto_device": "Placa de captura: dispositivo {index} ({api}).",

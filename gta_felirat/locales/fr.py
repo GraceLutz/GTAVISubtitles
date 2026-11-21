@@ -150,7 +150,7 @@ MESSAGES: dict[str, str] = {
     "vault.load_failed": "Impossible de lire la clé {name} (erreur Windows {code})",
     "vault.save_failed": "Impossible d'enregistrer la clé {name} (erreur Windows {code})",
     "vault.delete_failed": "Impossible de supprimer la clé {name} (erreur Windows {code})",
-    "cli.help_auto": "trouver la source automatiquement : PS Remote Play, Veyra, puis une carte d'acquisition (mode par défaut de l'exe)",
+    "cli.help_auto": "trouver la source automatiquement : Veyra, PS Remote Play, puis une carte d'acquisition (mode par défaut de l'exe)",
     "cli.help_capture_api": "mode d'ouverture de la carte d'acquisition : auto, dshow (DirectShow) ou msmf (Media Foundation)",
     "cli.device_no_picture": "s'ouvre, mais ne donne pas d'image",
     "cli.auto_device": "Carte d'acquisition : périphérique {index} ({api}).",

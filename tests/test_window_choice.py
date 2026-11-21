@@ -6,6 +6,8 @@ REMOTE_PLAY = VisibleWindow(hwnd=11, title="PS Remote Play", area=1920 * 1080)
 REMOTE_PLAY_DIALOG = VisibleWindow(hwnd=12, title="PS Remote Play", area=360 * 97)
 VEYRA = VisibleWindow(hwnd=21, title="Veyra — 采集卡 · LIVE", area=1920 * 1080)
 BROWSER = VisibleWindow(hwnd=31, title="Likely7/Veyra-NRVideo - Google Chrome", area=2560 * 1440)
+VEYRA_PLAIN = VisibleWindow(hwnd=22, title="Veyra 2.2.0", area=1920 * 1080)
+REPO_TAB = VisibleWindow(hwnd=32, title="Veyra-NRVideo/README.md at main - Brave", area=2560 * 1440)
 
 
 def test_window_with_the_exact_title_is_chosen():
@@ -49,3 +51,14 @@ def test_built_in_title_is_not_matched_by_its_beginning():
 
     with pytest.raises(WindowNotFoundError):
         choose_window("PS Remote Play", [browser_tab])
+
+
+def test_title_with_the_version_after_the_name_is_found_by_its_beginning():
+    # A Veyra 2.2.0 ablakának címe csak a név és a verzió
+    assert choose_window("Veyra", [REPO_TAB, VEYRA_PLAIN], by_start=True) == VEYRA_PLAIN.hwnd
+
+
+def test_title_that_only_continues_the_word_does_not_count():
+    # Egy „Veyra-NRVideo …” című böngészőlap nem a Veyra ablaka
+    with pytest.raises(WindowNotFoundError):
+        choose_window("Veyra", [REPO_TAB], by_start=True)

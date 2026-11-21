@@ -141,7 +141,7 @@ MESSAGES: dict[str, str] = {
     "vault.load_failed": "A(z) {name} kulcsot nem sikerült beolvasni (Windows-hiba {code})",
     "vault.save_failed": "A(z) {name} kulcsot nem sikerült elmenteni (Windows-hiba {code})",
     "vault.delete_failed": "A(z) {name} kulcsot nem sikerült törölni (Windows-hiba {code})",
-    "cli.help_auto": "a forrás automatikus keresése: PS Remote Play, Veyra, majd capture card (az exe alapmódja)",
+    "cli.help_auto": "a forrás automatikus keresése: Veyra, PS Remote Play, majd capture card (az exe alapmódja)",
     "cli.help_capture_api": "a capture card megnyitásának módja: auto, dshow (DirectShow) vagy msmf (Media Foundation)",
     "cli.device_no_picture": "megnyílik, de nem ad képet",
     "cli.auto_device": "Capture card: {index}. eszköz ({api}).",

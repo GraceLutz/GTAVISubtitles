@@ -116,8 +116,8 @@ def _has_window(title: str, *, by_start: bool = False) -> bool:
 
 def _resolve_auto_source(args: argparse.Namespace, capture_api: str, webcam_index: int | None) -> int | None:
     """--auto: beállítja args-ban a megtalált forrást; ha nincs mit választani, a kilépési kód."""
-    has_remote_play = _has_window(REMOTE_PLAY_TITLE)
-    has_veyra = not has_remote_play and _has_window(VEYRA_TITLE_START, by_start=True)
+    has_veyra = _has_window(VEYRA_TITLE_START, by_start=True)
+    has_remote_play = not has_veyra and _has_window(REMOTE_PLAY_TITLE)
     # Eszközt csak akkor keresünk, ha nincs ablak (a megnyitási próba lassú, és foglalhatja az eszközt)
     devices = [] if has_remote_play or has_veyra else devices_for_choice(
         (list_devices(name) for name in listing_apis(capture_api)), webcam_index)

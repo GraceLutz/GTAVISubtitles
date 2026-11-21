@@ -34,7 +34,7 @@ class Region:
     """Képrészlet a teljes kép arányában (0.0–1.0)."""
 
     left: float = 0.12
-    top: float = 0.78
+    top: float = 0.70  # két-három soros felirat is beférjen (a játék a hosszú szöveget felfelé tolja)
     right: float = 0.88
     bottom: float = 0.98
 

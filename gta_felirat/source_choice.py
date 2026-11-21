@@ -1,7 +1,7 @@
 """Indításkor (forrás megadása nélkül) a program maga keresi meg, honnan jön a játék képe.
 
-Sorrend: a PS Remote Play ablaka, a Veyra ablaka (ez capture cardot vagy Remote Playt is mutathat),
-végül egy capture card. Ha több capture card is van, nem találgatunk: a felhasználó választ (--device).
+Sorrend: a Veyra ablaka (ha fut, abban nézed a capture card vagy a Remote Play képét), a PS Remote Play
+ablaka, végül egy capture card. Ha több capture card is van, nem találgatunk: a felhasználó választ (--device).
 """
 
 from __future__ import annotations
@@ -12,15 +12,15 @@ from dataclasses import dataclass
 from .capture import FoundDevice
 
 REMOTE_PLAY_TITLE = "PS Remote Play"
-# A Veyra címei: „Veyra — 采集卡 · LIVE”, „Veyra — PS5 Remote Play”, „Veyra — 本地实验版”. A gondolatjellel
-# együtt keressük, hogy egy „Veyra-NRVideo …” című böngészőlapot ne vegyünk a játék képének.
-VEYRA_TITLE_START = "Veyra —"
+# A Veyra címei: „Veyra 2.2.0”, „Veyra — 采集卡 · LIVE”, „Veyra — PS5 Remote Play”. A szó elejére illesztünk
+# (utána szóköz vagy írásjel), így egy „Veyra-NRVideo …” című böngészőlap nem számít találatnak.
+VEYRA_TITLE_START = "Veyra"
 
 
 @dataclass(frozen=True)
 class WindowSource:
     title: str
-    by_start: bool  # a cím elejére is illeszt (a Veyra címe a forrástól függően változik)
+    by_start: bool  # a cím elejére is illeszt (a Veyra címe a verziótól és a forrástól függően változik)
 
 
 @dataclass(frozen=True)
@@ -37,10 +37,11 @@ SourceChoice = WindowSource | DeviceSource | NoSource
 
 
 def choose_source(has_remote_play: bool, has_veyra: bool, devices: Sequence[FoundDevice]) -> SourceChoice:
-    if has_remote_play:
-        return WindowSource(REMOTE_PLAY_TITLE, by_start=False)
+    # A Veyra előbb: ha fut, a játékot abban nézed (a Remote Play mellette nyitva maradhat)
     if has_veyra:
         return WindowSource(VEYRA_TITLE_START, by_start=True)
+    if has_remote_play:
+        return WindowSource(REMOTE_PLAY_TITLE, by_start=False)
     device = _only_device(devices)
     return DeviceSource(device) if device is not None else NoSource(tuple(devices))
 

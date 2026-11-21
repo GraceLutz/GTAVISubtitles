@@ -149,7 +149,7 @@ MESSAGES: dict[str, str] = {
     "vault.load_failed": "Der {name}-Schlüssel konnte nicht gelesen werden (Windows-Fehler {code})",
     "vault.save_failed": "Der {name}-Schlüssel konnte nicht gespeichert werden (Windows-Fehler {code})",
     "vault.delete_failed": "Der {name}-Schlüssel konnte nicht gelöscht werden (Windows-Fehler {code})",
-    "cli.help_auto": "Quelle automatisch suchen: PS Remote Play, Veyra, dann Capture-Karte (Standard der exe)",
+    "cli.help_auto": "Quelle automatisch suchen: Veyra, PS Remote Play, dann Capture-Karte (Standard der exe)",
     "cli.help_capture_api": "Art, die Capture-Karte zu öffnen: auto, dshow (DirectShow) oder msmf (Media Foundation)",
     "cli.device_no_picture": "öffnet sich, liefert aber kein Bild",
     "cli.auto_device": "Capture-Karte: Gerät {index} ({api}).",
