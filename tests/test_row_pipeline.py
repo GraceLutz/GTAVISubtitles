@@ -511,6 +511,80 @@ def test_row_detected_anew_at_the_same_place_keeps_its_translation_until_it_is_r
     assert scene.shown.hidden == ()
 
 
+@pytest.mark.parametrize("only_spoken", [True, False])
+def test_two_row_line_keeps_its_translation_while_one_row_is_detected_anew_somewhere_narrower(make_scene,
+                                                                                               only_spoken):
+    # Világos, mozgó háttér előtt a felső sor kisebb dobozt kap (nem ugyanaz a hely, nem örökli a szövegét):
+    # amíg el nem olvassuk, az alsó sor maradéka („most evenings.”) nem lehet önálló felirat
+    scene = make_scene(only_spoken_lines=only_spoken)
+    said, second = "I will be located in Pelican Valley near Thorpe Adventures", "most evenings."
+    first = f"Kirk: {said}"
+    scene.show(1.0, row(1, UPPER, first_seen=1.0), row(2, LOWER, first_seen=1.0))
+    scene.read(1.04, (1, first), (2, second))
+    scene.translated(1.3)
+    whole = f"{said} {second}"  # a fordító a beszélő neve nélkül kapja
+    translated = scene.shown
+    narrower = Box(UPPER.left + 40, UPPER.top + 2, UPPER.left + 300, UPPER.bottom - 1)
+
+    scene.show(3.0, row(3, narrower, first_seen=3.0, stable=1), row(2, LOWER, first_seen=1.0, stable=60))
+    while_unread = scene.shown
+    scene.show(3.033, row(3, narrower, first_seen=3.0, stable=2), row(2, LOWER, first_seen=1.0, stable=61))
+    scene.read(3.1, (3, first))
+
+    assert while_unread.lines == translated.lines  # a fordítás kint marad, az alsó angol sor takarva
+    assert scene.shown.lines == translated.lines
+    assert scene.backend.calls == [whole]  # a maradékot nem fordítjuk külön
+
+
+def test_two_row_line_keeps_its_translation_while_one_row_drops_out_for_a_capture(make_scene):
+    scene = make_scene(only_spoken_lines=True)
+    said, second = "No, no... She's not a rat.", "She's just desperate because of Jordy."
+    scene.show(1.0, row(1, UPPER, first_seen=1.0), row(2, LOWER, first_seen=1.0))
+    scene.read(1.04, (1, f"Lucia: {said}"), (2, second))
+    scene.translated(1.3)
+    translated = scene.shown
+
+    scene.show(2.0, row(1, UPPER, first_seen=1.0, stable=60, missing=1), row(2, LOWER, first_seen=1.0, stable=60))
+    while_missing = scene.shown
+    scene.show(2.02, row(1, UPPER, first_seen=1.0, stable=61), row(2, LOWER, first_seen=1.0, stable=61))
+
+    assert while_missing.lines == translated.lines  # nem villan ki az angol
+    assert scene.shown.lines == translated.lines
+
+
+def test_reading_that_arrives_after_its_row_was_detected_anew_goes_to_the_row_in_its_place(make_scene):
+    # Mozgó háttér előtt a sor szinte minden képen új azonosítót kap: az olvasás mire elkészül, a sor már eltűnt
+    scene = make_scene()
+    scene.show(1.0, row(1, LOWER, first_seen=1.0, stable=1))
+    scene.show(1.02, row(2, Box(LOWER.left + 4, LOWER.top - 4, LOWER.right - 3, LOWER.bottom + 3), first_seen=1.02,
+                         stable=1))
+    scene.show(1.04, row(3, LOWER, first_seen=1.04, stable=1))
+
+    scene.read(1.06, (1, TROUBLE))
+    for step, now in enumerate((1.08, 1.10, 1.12)):  # a doboza is képről képre kicsit más
+        scene.show(now, row(4 + step, Box(LOWER.left + step, LOWER.top, LOWER.right, LOWER.bottom), first_seen=now,
+                            stable=1))
+    scene.translated(1.3)
+
+    assert [line.text for line in scene.shown.lines] == [hu(TROUBLE)]
+    assert scene.backend.calls == [TROUBLE]
+
+
+def test_subtitle_row_stays_subtitle_coloured_while_its_letters_fade_against_a_bright_background(make_scene):
+    scene = make_scene(only_spoken_lines=True)
+    said, second = "No, no... She's not a rat.", "She's just desperate because of Jordy."
+    scene.show(1.0, row(1, UPPER, first_seen=1.0), row(2, LOWER, first_seen=1.0))
+    scene.read(1.04, (1, f"Lucia: {said}"), (2, second))
+    scene.translated(1.3)
+    translated = scene.shown
+
+    faded = Box(UPPER.left - 3, UPPER.top + 3, UPPER.right + 2, UPPER.bottom - 2)  # új azonosító, kevés fehér
+    scene.show(2.0, row(3, faded, first_seen=2.0, stable=1, whiteness=0.01, sure=False),
+               row(2, LOWER, first_seen=1.0, stable=60))
+
+    assert scene.shown.lines == translated.lines
+
+
 def test_inherited_text_gives_way_to_what_the_row_really_says(make_scene):
     scene = make_scene()
     scene.speak(TROUBLE, LOWER)

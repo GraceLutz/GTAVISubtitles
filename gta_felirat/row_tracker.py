@@ -34,9 +34,10 @@ STABLE_CAPTURES = 2  # ennyi egyező rögzítés után stabilak a sor képpontja
 # Ennél hosszabb szünet után (pl. közben a régi úton olvastunk) a korábbi sorokban nem bízunk: ami a szünetben
 # történt, nem láttuk, ezért minden sor újnak számít, és újraolvassuk (becsült érték: a felirat ~0,8 mp-ig marad)
 MAX_CAPTURE_GAP_SECONDS = 1.0
-# Két doboz „ugyanaz a hely”, ha a közös részük a kettő együttes területének legalább ekkora része.
-# Becsült érték: ugyanaz a sor ±3 pixeles ingadozással ~0,85; más hosszúságú (középre igazított) szöveg kevesebb.
-SAME_PLACE_OVERLAP = 0.8
+# Két doboz „ugyanaz a hely” (is_same_place): mért érték: ugyanaz a sor mozgó háttér előtt 0,82-0,9 közös
+# szélességet ad; más hosszúságú (középre igazított) szöveg kevesebbet.
+SAME_PLACE_OVERLAP = 0.8  # ugyanaz a hely: a két sor közös szélessége az együttes szélességükhöz mérve
+SAME_ROW_HEIGHT = 0.7  # ugyanaz a képernyősor: a közös magasság az alacsonyabbikhoz mérve
 WATCHER = "watcher"  # WorkerFailed.worker: a sorkereső hibázott
 RECOGNIZER = "recognizer"  # WorkerFailed.worker: a sorok olvasása (OCR) hibázott
 
@@ -134,14 +135,17 @@ def overlaps(first: Box, second: Box) -> bool:
 
 
 def is_same_place(first: Box, second: Box) -> bool:
-    """Szinte teljesen fedi-e egymást a két doboz: ugyanaz a képernyősor, legfeljebb néhány pixel eltéréssel."""
+    """Ugyanaz a képernyősor, közel ugyanazzal a szélességgel.
+
+    A két irányt külön mérjük: mozgó, világos háttér előtt (tömörített képen) a kereső a sor magasságát
+    5-8 pixellel is másnak méri (a betűk körüli elmosódás), a szélességét viszont csak néhány pixellel; a
+    más szövegű sor a szélességében különbözik."""
     width = min(first.right, second.right) - max(first.left, second.left)
     height = min(first.bottom, second.bottom) - max(first.top, second.top)
     if width <= 0 or height <= 0:
         return False
-    shared = width * height
-    combined = first.width * first.height + second.width * second.height - shared
-    return shared >= SAME_PLACE_OVERLAP * combined
+    spanned = max(first.right, second.right) - min(first.left, second.left)
+    return width >= SAME_PLACE_OVERLAP * spanned and height >= SAME_ROW_HEIGHT * min(first.height, second.height)
 
 
 @dataclass(frozen=True, eq=False)  # eq=False: az aláírás összehasonlítása nem a mi dolgunk (és numpy-tömb is lehet)

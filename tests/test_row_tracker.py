@@ -214,6 +214,18 @@ def test_nearly_identical_boxes_are_the_same_place():
     assert is_same_place(LOWER, jittered)
 
 
+def test_row_measured_taller_against_a_moving_bright_background_is_the_same_place():
+    blurred = Box(LOWER.left - 6, LOWER.top - 6, LOWER.right + 5, LOWER.bottom + 4)  # elmosódott betűszélek
+
+    assert is_same_place(LOWER, blurred)
+
+
+def test_slightly_wider_box_of_another_text_is_not_the_same_place():
+    wider = Box(LOWER.left - 60, LOWER.top, LOWER.right + 60, LOWER.bottom)
+
+    assert not is_same_place(LOWER, wider)
+
+
 def test_same_slot_with_a_clearly_different_width_is_not_the_same_place():
     shorter = Box(LOWER.left + 80, LOWER.top, LOWER.right - 80, LOWER.bottom)
 

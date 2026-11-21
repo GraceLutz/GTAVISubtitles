@@ -60,6 +60,10 @@ RECHECK_SECONDS = 0.1
 # látott sort sem kell tovább megerősíteni. A leglassabb képforrás két képe között ~0,07 mp telik el
 STILL_SECONDS = 0.15
 NEVER = float("inf")
+PLACE_SLACK_PX = 6  # ennyit ingadozhat a kereső doboza ugyanazon a soron
+# Az örökölt szöveg ennyi ideig érvényes a lánc legutóbbi valódi olvasása után: mozgó háttér előtt a sor szinte
+# minden képen új azonosítót kap, a szövegét a késve érkező olvasások frissítik (lásd _take_texts)
+CHAIN_READ_SECONDS = 1.0
 
 # (az elfogadott feliratsorok, stabilak-e a képpontjaik, az olvasatlan sorok: azonosító, hely, előre takarható-e)
 _State = tuple[tuple[OcrLine, ...], bool, tuple[tuple[int, Box, bool], ...]]
@@ -76,6 +80,17 @@ class RowPathStats:
     stale_texts: int = 0  # közben eltűnt sor szövege: eldobtuk
     stale_snapshots: int = 0  # más ablakméretre készült pillanatkép: eldobtuk
     inherited_texts: int = 0  # ennyi új sor örökölte az előtte ugyanott álló sor szövegét
+
+
+def _plain(text: str) -> str:
+    """Összevetéshez: kisbetűs, egyszeres szóközökkel (a sortörés is szóköz)."""
+    return " ".join(text.lower().split())
+
+
+def _lies_within(inner: Box, outer: Box) -> bool:
+    """A belső doboz (néhány pixel eltéréssel) a külsőn belül áll."""
+    return (inner.left >= outer.left - PLACE_SLACK_PX and inner.right <= outer.right + PLACE_SLACK_PX
+            and inner.top >= outer.top - PLACE_SLACK_PX and inner.bottom <= outer.bottom + PLACE_SLACK_PX)
 
 
 def _is_stable(row: RowObs) -> bool:
@@ -115,6 +130,10 @@ class RowPipeline(SubtitlePipeline):
         self._snapshot: BandSnapshot | None = None  # None: a soralapú út most nem megy
         self._rows: tuple[RowObs, ...] = ()
         self._texts: dict[int, RowText] = {}
+        # Eltűnt sor → a sor, amelyik a helyére került (lásd _texts_for); a késve érkező olvasás az utódé lesz
+        self._heirs: dict[int, int] = {}
+        self._read_at: dict[int, float] = {}  # sor → mikor érkezett az a valódi olvasás, amelyből a szövege van
+        self._white_rows: set[int] = set()  # a feliratszínű sorok és utódaik (lásd _whiteness)
         self._last_state: _State | None = None
         self._is_on_screen = False  # a legutóbbi kép szerint látszik a felirat
         self._next_deadline = NEVER
@@ -146,7 +165,7 @@ class RowPipeline(SubtitlePipeline):
         Ezután a régi, teljes olvasású út (submit_band / poll) ugyanezen a példányon folytathatja; a következő
         elfogadott pillanatkép újraindítja a soralapú utat. A már felismert sorszövegek megmaradnak: a felismerő
         nem olvassa újra azt a sort, amelyik a visszatéréskor még a képen van."""
-        self._snapshot, self._rows = None, ()
+        self._snapshot, self._rows, self._heirs, self._read_at, self._white_rows = None, (), {}, {}, set()
         self._last_state, self._is_on_screen, self._next_deadline = None, False, NEVER
         self._objective.see(None, 0.0)  # a régi út nem keres küldetéssort
         if self._block is None:  # a takarásokat csak a soralapú út venné le: ami kell, azt a régi út újra kiteszi
@@ -162,7 +181,7 @@ class RowPipeline(SubtitlePipeline):
         if self._is_on_screen:
             self._tracker.touch(now)  # újabb képig a legutóbbi érvényes: a felirat eddig a pillanatig látszott
         has_news = self._take_snapshot(snapshot)
-        has_news = self._take_texts(texts) or has_news
+        has_news = self._take_texts(texts, now) or has_news
         current = self._snapshot
         if current is not None and (has_news or self._last_state is None or now >= self._next_deadline):
             self._refresh(current.captured_at, now)
@@ -186,6 +205,8 @@ class RowPipeline(SubtitlePipeline):
         if self._snapshot is not None and snapshot.frame_size != self._snapshot.frame_size:
             self._forget_places()
         self._texts = self._texts_for(snapshot.rows)
+        alive = {row.row_id for row in snapshot.rows}
+        self._read_at = {row_id: moment for row_id, moment in self._read_at.items() if row_id in alive}
         self._snapshot, self._rows, self._frame_size = snapshot, snapshot.rows, snapshot.frame_size
         return True
 
@@ -197,24 +218,63 @@ class RowPipeline(SubtitlePipeline):
         alive = {row.row_id for row in rows}
         known = {row.row_id for row in self._rows}
         texts = {row_id: text for row_id, text in self._texts.items() if row_id in alive}
-        orphans = [(row.box, self._texts[row.row_id]) for row in self._rows
-                   if row.row_id not in alive and row.row_id in self._texts]
+        orphans = [row for row in self._rows if row.row_id not in alive]
+        heirs = {}
         for row in rows:
-            left_behind = next((text for box, text in orphans if is_same_place(box, row.box)), None)
-            if row.row_id not in known and left_behind is not None:
+            if row.row_id in known:
+                continue
+            orphan = next((old for old in orphans if is_same_place(old.box, row.box)), None)
+            if orphan is None:
+                continue
+            heirs[orphan.row_id] = row.row_id
+            left_behind = self._texts.get(orphan.row_id)
+            if left_behind is not None:
                 texts[row.row_id] = replace(left_behind, row_id=row.row_id, provisional=True)
+                if orphan.row_id in self._read_at:
+                    self._read_at[row.row_id] = self._read_at[orphan.row_id]
                 self.stats.inherited_texts += 1
+        # Az öröklési lánc csak addig érdekes, amíg a vége látszik: a régebbi sorok olvasása elavult
+        chains = {**self._heirs, **heirs}
+        self._heirs = {old: new for old, new in chains.items() if self._heir_of(old, chains) in alive}
+        # Világos, mozgó háttér előtt a fehér betűk aránya képről képre 1-10% között ugrál: ami ugyanazon a helyen
+        # egyszer már feliratszínű volt, az utódja is az marad (különben a felirat sorai ki-be esnének belőle)
+        self._white_rows = ({row.row_id for row in rows if row.whiteness >= MIN_WHITE_FRACTION}
+                            | {row_id for row_id in self._white_rows if row_id in alive}
+                            | {new for old, new in heirs.items() if old in self._white_rows})
         return texts
 
-    def _take_texts(self, texts: Sequence[RowText]) -> bool:
+    def _whiteness(self, row: RowObs) -> float:
+        """A sor feliratszínűsége, az elődjeitől örökölve (lásd _texts_for)."""
+        return max(row.whiteness, MIN_WHITE_FRACTION) if row.row_id in self._white_rows else row.whiteness
+
+    def _heir_of(self, row_id: int, heirs: dict[int, int] | None = None) -> int:
+        """Az a sor, amelyik (akár több lépésben) az eltűnt sor helyére került; ha nincs ilyen, maga a sor."""
+        heirs = self._heirs if heirs is None else heirs
+        seen = {row_id}
+        while row_id in heirs and heirs[row_id] not in seen:
+            row_id = heirs[row_id]
+            seen.add(row_id)
+        return row_id
+
+    def _take_texts(self, texts: Sequence[RowText], now: float) -> bool:
         alive = {row.row_id for row in self._rows}
         fresh = {item.row_id: item for item in texts if item.row_id in alive}
-        stale = len(texts) - len(fresh)
+        for item in texts:
+            heir = self._heir_of(item.row_id)
+            if item.row_id in alive or heir not in alive or not item.is_legible(self._config.min_text_score):
+                continue
+            current = fresh.get(heir) or self._texts.get(heir)
+            if current is None or current.provisional:
+                # Mozgó háttér előtt a sor szinte minden képen új azonosítót kap, és az olvasása mire elkészül, a
+                # sor már eltűnt: a helyére került utód kapja (ideiglenesen, a saját olvasásáig)
+                fresh[heir] = replace(item, row_id=heir, provisional=True)
+        stale = len([item for item in texts if item.row_id not in alive])
         if stale:  # a sor közben eltűnt (vagy más méretű lett a kép): az eredménye elavult
             self.stats.stale_texts += stale
             logger.debug("%d row text(s) dropped: the rows are gone", stale)
         for item in fresh.values():
             self._palette.learn(item.speaker_colors)
+            self._read_at[item.row_id] = now
         self._texts = {**self._texts, **fresh}
         return bool(fresh)
 
@@ -229,6 +289,8 @@ class RowPipeline(SubtitlePipeline):
         self._texts = self._unexpired_texts(now)
         is_still = now - pictured_at >= STILL_SECONDS
         lines, used, is_free_waiting = self._assemble(is_still)
+        if self._is_partly_unread(now):
+            lines = self._live_lines  # a felirat egyik sora még olvasatlan: a maradékából nem lesz új felirat
         confirmed = is_still or all(_is_stable(row) for row in used)
         unread = tuple((row.row_id, row.box, self._can_hide_early(row))
                        for row in self._rows if row.row_id not in self._texts)
@@ -249,10 +311,16 @@ class RowPipeline(SubtitlePipeline):
         self._next_deadline = min(deadline, self._next_deadline) if is_pending else deadline
 
     def _unexpired_texts(self, now: float) -> dict[int, RowText]:
-        """Az örökölt szöveg csak addig érvényes, ameddig egy olvasatlan sort eltakarnánk."""
-        expired = {row.row_id for row in self._rows if now - row.first_seen >= EAGER_HIDE_SECONDS}
+        """Az örökölt szöveg csak addig érvényes, ameddig egy olvasatlan sort eltakarnánk, vagy amíg az
+        öröklési lánc legutóbbi olvasása friss."""
+        expired = {row.row_id for row in self._rows if now >= self._inherited_until(row)}
         return {row_id: text for row_id, text in self._texts.items()
                 if not (text.provisional and row_id in expired)}
+
+    def _inherited_until(self, row: RowObs) -> float:
+        """Eddig érvényes a sor örökölt szövege."""
+        return max(row.first_seen + EAGER_HIDE_SECONDS,
+                   self._read_at.get(row.row_id, float("-inf")) + CHAIN_READ_SECONDS)
 
     def _assemble(self, is_still: bool) -> tuple[tuple[OcrLine, ...], tuple[RowObs, ...], bool]:
         """(az elfogadott feliratsorok, a sorok, amelyekből lettek, vár-e máshol álló szöveg a stabilitásra):
@@ -267,7 +335,7 @@ class RowPipeline(SubtitlePipeline):
         legible = {row.box: row for row in self._rows
                    if row.missing == 0 and row.row_id in self._texts
                    and self._texts[row.row_id].is_legible(min_score)}
-        fragments = [Fragment(self._texts[row.row_id].text.strip(), box, row.whiteness)
+        fragments = [Fragment(self._texts[row.row_id].text.strip(), box, self._whiteness(row))
                      for box, row in legible.items()]
         center = self._frame_center()
         kept = select_subtitle(fragments, center)
@@ -285,6 +353,26 @@ class RowPipeline(SubtitlePipeline):
                 lines += free_lines
                 used += block
         return lines, tuple(legible[fragment.box] for fragment in used), is_free_waiting
+
+    def _is_partly_unread(self, now: float) -> bool:
+        """A kiírt felirat egy sora átmenetileg nem olvasható: új dobozt kapott (világos, mozgó háttér előtt a
+        kereső másképp méri, ezért a szövegét sem örökli) és még olvasatlan, vagy egy-két képen nem látszott
+        (türelmi idejét tölti); a többi sora viszont változatlanul ott áll.
+
+        Ilyenkor a látható maradék (pl. a második sor: „most evenings.”) nem új felirat: addig a kiírt felirat
+        marad, az olvasatlan sor takarva. Ha semmi sem maradt a régiből, a szokásos szabály dönt."""
+        current = _plain(self._tracker.current)
+        if not current or not self._live_lines:
+            return False
+        nearby = [row for row in self._rows if any(overlaps(row.box, live.box) for live in self._live_lines)]
+        read = [row for row in nearby if row.missing == 0 and row.row_id in self._texts]
+        gaps = [row for row in nearby if row.missing > 0 or (
+            row.row_id not in self._texts and self._can_hide_early(row) and now - row.first_seen < UNREAD_HIDE_SECONDS)]
+        if not read or not gaps:
+            return False
+        # A már olvasott sorok a kiírt felirat részei, és a régi helyükön állnak (nem görgette őket a játék)
+        return all(_plain(self._texts[row.row_id].text) in current
+                   and any(_lies_within(row.box, live.box) for live in self._live_lines) for row in read)
 
     def _objective_line(self) -> OcrLine | None:
         """A párbeszédsorok alatt, középen álló, feliratszínű, mondatszerű sor (küldetésutasítás), ha fordítjuk."""
@@ -357,9 +445,9 @@ class RowPipeline(SubtitlePipeline):
 
         is_free_waiting: máshol álló szöveg vár arra, hogy a képpontjai stabilak legyenek (lásd _assemble)."""
         lines, confirmed, _unread = state
-        moments = [row.first_seen + EAGER_HIDE_SECONDS for row in self._rows  # lejár az örökölt szöveg
+        moments = [self._inherited_until(row) for row in self._rows  # lejár az örökölt szöveg
                    if row.row_id in self._texts and self._texts[row.row_id].provisional
-                   and now - row.first_seen < EAGER_HIDE_SECONDS]
+                   and now < self._inherited_until(row)]
         moments += [row.first_seen + UNREAD_HIDE_SECONDS for row in self._rows  # lejár az olvasás előtti takarás
                     if row.row_id not in self._texts and now - row.first_seen < UNREAD_HIDE_SECONDS]
         if (lines and not confirmed) or is_free_waiting:
@@ -393,7 +481,7 @@ class RowPipeline(SubtitlePipeline):
     def _can_hide_early(self, row: RowObs) -> bool:
         """Olvasás előtt csak azt takarjuk, ami szinte biztosan párbeszédsor: a kereső biztos benne,
         feliratszínű, és nem a párbeszédsorok alatt áll (a küldetésutasításhoz sosem nyúlunk)."""
-        return (row.sure and row.missing == 0 and row.whiteness >= MIN_WHITE_FRACTION
+        return (row.sure and row.missing == 0 and self._whiteness(row) >= MIN_WHITE_FRACTION
                 and self._frame_center().is_dialogue_row(row.box))
 
     def _has_line_places(self) -> bool:
