@@ -1,7 +1,14 @@
-from band_drawing import AREA, CENTER_X, DIALOGUE_BASELINE, FRAME, OBJECTIVE_BASELINE, UPPER_BASELINE, band_with
+from dataclasses import replace
+
+import cv2
+import pytest
+from band_drawing import (AREA, CENTER_X, DIALOGUE_BASELINE, FONT, FONT_SCALE, FRAME, GREEN, OBJECTIVE_BASELINE, PINK,
+                          UPPER_BASELINE, band_with, band_with_parts)
+
+from gta_felirat.row_detector import DEFAULT_PARAMS
 
 from gta_felirat.fragment_filter import DIALOGUE_BOTTOM_RATIO, MIN_WHITE_FRACTION, white_fraction
-from gta_felirat.row_finder import MIN_FRAME_WIDTH, ROW_FINDER, is_wide_enough, make_row_finder
+from gta_felirat.row_finder import MIN_FRAME_WIDTH, ROW_FINDER, find_rows, is_wide_enough, make_row_finder
 
 TROUBLE = "We ain't lookin' for trouble, okay?"
 HOW = "How about you, how you doin' now?"
@@ -121,3 +128,43 @@ def test_the_finder_without_the_whole_band_is_the_default_one():
 
     assert ([row.box for row in make_row_finder(whole_band=False).detect(band, AREA, FRAME)]
             == [row.box for row in ROW_FINDER.detect(band, AREA, FRAME)])
+
+
+WHITE = (255, 255, 255)
+OFF_WHITE = (186, 186, 186)  # a tömörített kép fehér betűje világos háttér (rendszám) előtt
+
+
+def text_span(parts, thickness):
+    """A középre igazított, darabokból álló sor első és utolsó oszlopa a teljes képen."""
+    width = sum(cv2.getTextSize(text, FONT, FONT_SCALE, thickness)[0][0] for text, _colour in parts)
+    return AREA.left + CENTER_X - width / 2, AREA.left + CENTER_X + width / 2
+
+
+@pytest.mark.parametrize("soft_white_level, is_found_whole", [
+    pytest.param(DEFAULT_PARAMS.soft_white_level, True, id="with the soft white pass"),
+    pytest.param(DEFAULT_PARAMS.white_level, False, id="without it the row lost its name"),
+])
+def test_off_white_named_row_over_a_bright_scene_is_found_whole_and_sure(soft_white_level, is_found_whole):
+    parts = [("Brian: ", GREEN), ("My advice... stay dead a while longer.", OFF_WHITE)]
+    band = band_with_parts(parts, DIALOGUE_BASELINE, background=130)
+    params = replace(DEFAULT_PARAMS, soft_white_level=soft_white_level)
+
+    rows = find_rows(band, AREA, FRAME, params)
+
+    left, right = text_span(parts, thickness=1)
+    whole = [row for row in rows if row.sure and row.box.left <= left and row.box.right >= right]
+    assert bool(whole) == is_found_whole
+
+
+@pytest.mark.parametrize("parts", [
+    pytest.param([("Go to your ", WHITE), ("car", PINK)], id="coloured keyword at the end"),
+    pytest.param([("Lose the cops", WHITE)], id="all white"),
+])
+def test_bold_objective_row_is_found_with_its_whole_text(parts):
+    band = band_with_parts(parts, OBJECTIVE_BASELINE, thickness=2)
+
+    rows = ROW_FINDER.detect(band, AREA, FRAME)
+
+    left, right = text_span(parts, thickness=2)
+    assert len(rows) == 1 and not rows[0].sure
+    assert rows[0].box.left <= left and rows[0].box.right >= right

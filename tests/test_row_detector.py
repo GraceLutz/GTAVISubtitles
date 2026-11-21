@@ -312,7 +312,7 @@ def test_to_frame_moves_the_row_into_frame_coordinates():
 def test_default_thresholds_are_the_values_measured_on_the_recordings():
     # A felvételeken hangolt értékek, a tesztek viszont nem látják a felvételeket: módosítás csak újraméréssel
     assert astuple(DEFAULT_PARAMS) == (
-        200, 150, 4.0, 8.0, 150, 25, 0.005, 40, 0.7, 90, 110.0, 2, 2.0, 9.0, 18.0, 32.0, 13.0, 26.0, 6.0,
+        200, 180, 150, 4.0, 8.0, 150, 25, 0.005, 40, 0.7, 90, 110.0, 2, 2.0, 9.0, 18.0, 32.0, 13.0, 26.0, 6.0,
         45.0, 0.07, 0.30, 0.062, 3.2, 3.0, 34.0, 15.0, 29.0, 0.085, 0.22, 0.08, 2.5, 7.0, 5.0, 8.0, 5.0, 120, 30, 80.0,
         False, 12.0, 40.0)
 

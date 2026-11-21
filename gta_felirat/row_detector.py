@@ -44,7 +44,7 @@ import numpy as np
 from .row_geometry import Row, Span, find_free_rows, find_rows, overlaps, seed_parts
 
 __all__ = ["DEFAULT_PARAMS", "NOTHING", "REFERENCE_WIDTH", "Detection", "Params", "Row", "detect", "detect_rows",
-           "to_frame"]
+           "text_extent", "to_frame"]
 
 REFERENCE_WIDTH = 1920.0  # a mért pixelméretek ekkora képszélességre szólnak
 BGR_CHANNELS = 3  # a negyedik (alfa) csatornát nem nézzük: a BGRA kép (GetDIBits, mss) is jó
@@ -61,6 +61,9 @@ class Params:
     """A kereső mért küszöbei; a pixelben megadott méretek 1920 széles képre szólnak."""
 
     white_level: int = 200  # a betű magja: mindhárom csatorna legalább ennyi (frosted_cover.TEXT_LEVEL)
+    # Második fehér menet, ha az elsőben nincs biztos sor: világos háttér előtt a tömörített kép fehér betűje
+    # 180–195 (rendszám előtt mérve), a 200-as menet csak a sor töredékeit látja
+    soft_white_level: int = 180
     outline_level: int = 150  # körvonal vagy sötét háttér: mindhárom csatorna legfeljebb ennyi (OUTLINE_LEVEL)
     outline_reach: float = 4.0  # ... és ilyen közel van a maghoz (OUTLINE_REACH_PX)
     stroke_max: float = 8.0  # az ennél nagyobb négyzetet tartalmazó világos folt nem betű (póló, ég, napos talaj)
@@ -185,12 +188,23 @@ def _centred(band: np.ndarray, measures: Measures) -> Detection:
 
 
 def _centred_rows(band: np.ndarray, measures: Measures) -> Detection:
-    """A kép közepére igazított sorok: előbb fehér, biztos fehér sor nélkül halvány (tévéfelirat) betűvel."""
+    """A kép közepére igazított sorok: előbb fehér, biztos fehér sor nélkül halvány (tévéfelirat) betűvel, végül
+    a lágy fehér menet, ha az egy sort egészebben lát (lásd soft_white_level)."""
     params = measures.params
     white = _scan(band, _white(params), measures)
     if any(row.sure for row in white.rows):
         return white
-    # Nincs biztos fehér sor: halvány szöveget is keresünk (fehér folt ne takarhassa el a tévéfeliratot)
+    found = _white_or_dim(band, white, measures)
+    # A tömörített képen világos háttér (rendszám, napos fal) előtt a fehér betű magja a hófehér szint alá esik:
+    # a sornak csak töredékeit látjuk, a halvány menet pedig a színes nevet nem. Ugyanazzal a körvonallal és
+    # névvel, kicsit sötétebb szinten a sor még egyben megtalálható
+    soft = _scan(band, _Tone(params.soft_white_level, params.outline_level, dim=False), measures)
+    return soft if sees_more(soft.rows, found.rows) else found
+
+
+def _white_or_dim(band: np.ndarray, white: Detection, measures: Measures) -> Detection:
+    """Biztos fehér sor nélkül halvány szöveget is keresünk (fehér folt ne takarhassa el a tévéfeliratot)."""
+    params = measures.params
     level = _text_level(band, params)
     if level >= params.white_level:
         return white  # világos jelenet: a fehér menet már mindent megnézett
@@ -199,6 +213,14 @@ def _centred_rows(band: np.ndarray, measures: Measures) -> Detection:
         return dim
     kept = keep_white_rows(white.rows, dim.rows)
     return white if kept == white.rows else replace(white, rows=kept)
+
+
+def sees_more(soft: tuple[Row, ...], found: tuple[Row, ...]) -> bool:
+    """A lágy fehér menetnek van-e biztos sora, amelyet a többi menet nem lát legalább ilyen szélesen, biztosként.
+
+    A sötét jeleneten álló tévéfeliratot a halvány menet ugyanúgy megtalálja: ott az marad (dim sorként)."""
+    return any(row.sure and not any(other.sure and _lies_within(row, other, WIDER_TOLERANCE_PX) for other in found)
+               for row in soft)
 
 
 def _with_grey_neighbours(band: np.ndarray, white: Detection, measures: Measures) -> Detection:
@@ -269,13 +291,16 @@ NEIGHBOUR_GAP_ROWS = 1.5
 # A szürke közbeszólás betűmagja ~110-150 (720p-s felvételen mérve); a tévéfelirat halvány szintje (dim_level) ennél magasabb
 GREY_NEIGHBOUR_LEVEL = 95
 SAME_LINE_TOLERANCE_PX = 4  # a két menet ugyanannak a sornak a tetejét és alját ennyin belül méri
+# A lágy fehér menet ennyivel szélesebben is ugyanazt a sort látja (más szint, más élsimítás); a beszélőnév ~70 px
+WIDER_TOLERANCE_PX = 8
 
 
-def _lies_within(inner: Row, outer: Row) -> bool:
-    """inner ugyanaz a sor (teteje és alja egyezik), és oszlopai outer festett kiterjedésén belül vannak."""
+def _lies_within(inner: Row, outer: Row, slack: int = 0) -> bool:
+    """inner ugyanaz a sor (teteje és alja egyezik), és oszlopai outer festett kiterjedésén belül vannak
+    (slack: ennyi képponttal oldalanként túl is érhet rajta)."""
     same_line = (abs(inner.ink_top - outer.ink_top) <= SAME_LINE_TOLERANCE_PX
                  and abs(inner.ink_bottom - outer.ink_bottom) <= SAME_LINE_TOLERANCE_PX)
-    return same_line and outer.ink_left <= inner.ink_left and inner.ink_right <= outer.ink_right
+    return same_line and outer.ink_left - slack <= inner.ink_left and inner.ink_right <= outer.ink_right + slack
 
 
 def _white(params: Params) -> _Tone:
@@ -310,6 +335,29 @@ def _is_cut_off(free: Row, centred: Row, gap: int) -> bool:
     if not overlaps(free, centred, by_columns=False):
         return False
     return max(centred.ink_left - free.ink_right, free.ink_left - centred.ink_right) < gap
+
+
+def text_extent(band_bgr: np.ndarray, row: Row, band_left: int, frame_width: float, max_gap: float,
+                params: Params = DEFAULT_PARAMS) -> Span:
+    """A sor képsorain álló fehér és színes betűk összefüggő oszloptartománya [left, right) a sáv koordinátáiban.
+
+    A tartomány a sor festett részéből indul, és a legfeljebb max_gap (1920-as képre mért) képpontos réseken
+    át terjed (pl. a küldetésutasítás „Hold [gomb] to …” gombikonja fölött); a színes kulcsszót is tartalmazza."""
+    measures = _measures(params, band_bgr.shape[1], frame_width / 2.0 - band_left, frame_width, None)
+    margin = _margin(measures)
+    top, bottom = max(0, row.ink_top - margin), min(band_bgr.shape[0], row.ink_bottom + margin)
+    image = np.ascontiguousarray(band_bgr[top:bottom])
+    letters = cv2.bitwise_or(_core_mask(image, _white(params), measures), _coloured_mask(image, measures))
+    lines = letters[row.ink_top - top:row.ink_bottom - top]
+    inked = cv2.reduce(lines, 0, cv2.REDUCE_MAX).ravel() > 0
+    inked[row.ink_left:row.ink_right] = True
+    left, right = row.ink_left, row.ink_right
+    reach = measures.px(max_gap)
+    while left > 0 and inked[max(0, left - reach):left].any():
+        left = max(0, left - reach) + int(np.flatnonzero(inked[max(0, left - reach):left])[0])
+    while right < inked.size and inked[right:right + reach].any():
+        right = right + int(np.flatnonzero(inked[right:right + reach])[-1]) + 1
+    return left, right
 
 
 def detect_rows(band_bgr: np.ndarray, band_left: int, frame_width: float, params: Params = DEFAULT_PARAMS, *,

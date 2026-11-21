@@ -15,7 +15,7 @@ import numpy as np
 
 from .fragment_filter import DIALOGUE_BOTTOM_RATIO, MAX_GREY_SPREAD, MIN_WHITE_FRACTION, white_fraction
 from .ocr import Box
-from .row_detector import DEFAULT_PARAMS, REFERENCE_WIDTH, Detection, Params, detect
+from .row_detector import DEFAULT_PARAMS, REFERENCE_WIDTH, Detection, Params, Row, detect, text_extent
 from .row_signature import SAME, Signature, compare, row_signature
 from .row_tracker import DetectedRow, RowFinder
 
@@ -27,6 +27,13 @@ MIN_FRAME_WIDTH = 1600
 # arányában; a legalsó párbeszédsor alja ~0,915-nél, a küldetéssoré ~0,945-nél van), és legalább ilyen magas
 OBJECTIVE_STRIP_ABOVE_RATIO = 0.01
 OBJECTIVE_STRIP_MIN_RATIO = 0.04
+# A küldetésutasítás betűje vastagabb vonalú a párbeszédénél: a magpixelek átlagos futáshossza (vonalvastagság)
+# 1080p-s felvételen 3,1–4,0 px (a párbeszédé 1,55–2,7, a kereső határa 3,2), és ritkábbak a vonásai
+OBJECTIVE_MAX_RUN = 4.6
+OBJECTIVE_MIN_STROKE_DENSITY = 0.05
+# A küldetéssor színes kulcsszava („Go to your car”) és gombikonja („Hold [gomb] to …”) nincs a fehér betűmagban:
+# a sor teljes szövegét az ennél nem nagyobb réseken át mérjük (az ikon ~45 képpont), és a kép közepére tükrözzük
+OBJECTIVE_MAX_GAP = 60.0
 
 _Signed = tuple[Signature, float]  # (a sor képpontjai, a kép szélessége a 1920-hoz mérve)
 
@@ -55,10 +62,27 @@ def _objective_rows(band: np.ndarray, area: Box, frame_size: tuple[int, int], pa
     if band.shape[0] - top < OBJECTIVE_STRIP_MIN_RATIO * frame_height:
         return []  # a sáv nem ér le a küldetéssorig
     strip = np.ascontiguousarray(band[top:])
-    detection = detect(strip, area.left, frame_width, replace(params, whole_band=False))
-    below = replace(detection, rows=tuple(row for row in detection.rows
+    detection = detect(strip, area.left, frame_width,
+                       replace(params, whole_band=False, max_run=OBJECTIVE_MAX_RUN,
+                               min_stroke_density=OBJECTIVE_MIN_STROKE_DENSITY))
+    center_x = frame_width / 2 - area.left
+    below = replace(detection, rows=tuple(_centred_whole(strip, row, area.left, frame_width, center_x, params)
+                                          for row in detection.rows
                                           if (row.top + row.bottom) / 2 + top > dialogue_bottom))
     return [replace(row, sure=False) for row in _detected_rows(below, strip, area, frame_width, top)]
+
+
+def _centred_whole(strip: np.ndarray, row: Row, band_left: int, frame_width: int, center_x: float,
+                   params: Params) -> Row:
+    """A küldetéssor a teljes szövegével: a játék az egész sort (színes kulcsszóval, gombikonnal) igazítja
+    középre, ezért a betűk legtávolabbi széle a kép közepére tükrözve adja a sor két végét."""
+    left, right = text_extent(strip, row, band_left, frame_width, OBJECTIVE_MAX_GAP, params)
+    half = max(center_x - left, right - center_x)
+    ink_left, ink_right = max(0, int(center_x - half)), min(strip.shape[1], int(np.ceil(center_x + half)))
+    scale = frame_width / REFERENCE_WIDTH
+    return replace(row, ink_left=ink_left, ink_right=ink_right,
+                   left=max(0, ink_left - round(params.pad_left * scale)),
+                   right=min(strip.shape[1], ink_right + round(params.pad_right * scale)))
 
 
 def _detected_rows(detection: Detection, band: np.ndarray, area: Box, frame_width: int,
