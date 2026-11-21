@@ -6,16 +6,17 @@ import pytest
 from gta_felirat.__main__ import default_config_path, ensure_config_file, with_exe_defaults
 
 
-def test_exe_without_source_starts_in_remote_play_mode():
-    assert with_exe_defaults([]) == ["--remote-play"]
+def test_exe_without_source_finds_the_source_itself():
+    assert with_exe_defaults([]) == ["--auto"]
 
 
-def test_exe_keeps_other_switches_when_adding_remote_play():
-    assert with_exe_defaults(["--lang", "de", "--translator", "claude"]) == [
-        "--remote-play", "--lang", "de", "--translator", "claude"]
+def test_exe_keeps_other_switches_when_adding_auto():
+    assert with_exe_defaults(["--lang", "de", "--capture-api", "msmf"]) == [
+        "--auto", "--lang", "de", "--capture-api", "msmf"]
 
 
 @pytest.mark.parametrize("argv", [
+    ["--auto"],
     ["--remote-play"],
     ["--window", "Xbox"],
     ["--window=Xbox"],
@@ -62,3 +63,26 @@ def test_missing_template_leaves_config_absent(tmp_path):
     target = tmp_path / "config.json"
     ensure_config_file(target, tmp_path / "nincs.json")
     assert not target.exists()
+
+
+@pytest.mark.parametrize("argv, wants_auto", [
+    (["--auto"], True),
+    (["--auto", "--lang", "de"], True),
+    (["--auto", "--window", "Xbox"], False),
+    (["--auto", "--remote-play"], False),
+    (["--auto", "--device", "1"], False),
+    (["--auto", "--image", "kep.png"], False),
+    ([], False),
+])
+def test_auto_source_is_searched_only_without_a_given_source(argv, wants_auto):
+    from gta_felirat.__main__ import _wants_auto_source, parse_args
+
+    assert _wants_auto_source(parse_args(argv)) is wants_auto
+
+
+def test_abbreviated_switch_is_not_accepted():
+    # Rövidítve (--win) a with_exe_defaults nem ismerné fel a forrást, és mellé tenné az --auto-t
+    from gta_felirat.__main__ import parse_args
+
+    with pytest.raises(SystemExit):
+        parse_args(["--win", "Xbox"])

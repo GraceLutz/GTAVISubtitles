@@ -27,8 +27,11 @@ Python, telepítés és kicsomagolás nélkül, egy kattintással:
 1. Tedd az exe-t egy saját mappába (pl. `C:\GTA6Felirat`), mert első indításkor
    maga mellé teszi a `config.json`-t.
 2. Indítsd el a PS Remote Playt, és csatlakozz a konzolhoz.
-3. Dupla kattintás a `GTA6Felirat.exe`-re. Alapból Remote Play módban indul; a
-   felirat a Medal/OBS monitorfelvételen és a streamen is látszik. Az indulás
+3. Dupla kattintás a `GTA6Felirat.exe`-re. Magától megkeresi a forrást: a futó PS
+   Remote Playt, ha az nincs, a [Veyra](https://github.com/Likely7/Veyra-NRVideo)
+   ablakát, ha az sincs, a capture cardot (ha több videóeszköz van, kiírja, melyiket
+   add meg `--device`-szal). A felirat a Medal/OBS monitorfelvételen és a streamen is
+   látszik. Az indulás
    10–20 másodperc, mert az exe minden induláskor kicsomagolja magát.
 4. Ha a SmartScreen figyelmeztet: *További információ → Futtatás mindenképp*
    (az exe nincs digitálisan aláírva).
@@ -256,9 +259,11 @@ Az overlay ablak csak képet mutat. A hanghoz válassz egyet:
 
 | Kapcsoló | Jelentés |
 |---|---|
+| `--auto` | a forrás automatikus keresése: PS Remote Play, Veyra, capture card (az exe alapmódja) |
 | `--device N` | capture card sorszáma |
+| `--capture-api auto\|dshow\|msmf` | a capture card megnyitásának módja; ha a kártya DirectShow-n nem nyílik meg, próbáld az `msmf`-et (config.json: `capture_api`) |
 | `--remote-play` | a PS Remote Play ablak fölé teszi a feliratot |
-| `--window "CÍM"` | tetszőleges ablak fölé, pontos ablakcímmel |
+| `--window "CÍM"` | tetszőleges ablak fölé, a pontos ablakcímmel vagy a címe elejével (pl. `--window Veyra`) |
 | `--lang KÓD` | célnyelv, pl. `hu`, `de`, `es` |
 | `--translator NÉV` | `auto`, `deepl`, `claude`, `openai`, `google` |
 | `--windowed` | ablakban indul |

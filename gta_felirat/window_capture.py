@@ -20,6 +20,7 @@ from .ocr import Box
 
 DPI_AWARENESS_PER_MONITOR = 2
 GA_ROOT = 2
+DWMWA_CLOAKED = 14
 # Ilyen sűrű rácson nézzük meg, mi van legfelül a feliratsávban (egy keskeny csík se csússzon át)
 OCCLUSION_SAMPLE_SPACING_PX = 40
 OCCLUSION_SAMPLE_ROWS = 3
@@ -50,26 +51,102 @@ def enable_dpi_awareness() -> None:
         logger.debug("DPI-beállítás nem sikerült: %s", err)
 
 
-def find_window(title: str) -> int:
-    """A pontosan ilyen című látható ablak azonosítója (HWND)."""
+@dataclass(frozen=True)
+class VisibleWindow:
+    hwnd: int
+    title: str
+    area: int  # a tartalmi rész területe pixelben (0, ha le van kicsinyítve)
+
+
+def find_window(title: str, *, by_start: bool = False) -> int:
+    """A megadott című látható ablak azonosítója (HWND); lásd choose_window."""
+    windows = _visible_windows()
+    hwnd = choose_window(title, windows, by_start=by_start)
+    chosen = next(window for window in windows if window.hwnd == hwnd)
+    logger.info(t("capture.window_chosen", title=chosen.title))
+    return hwnd
+
+
+def has_window(title: str, *, by_start: bool = False) -> bool:
+    """Van-e most ilyen című látható ablak (pl. fut-e a PS Remote Play); lásd choose_window."""
+    try:
+        choose_window(title, _visible_windows(), by_start=by_start)
+    except WindowNotFoundError:
+        return False
+    return True
+
+
+def choose_window(title: str, windows: Collection[VisibleWindow], *, by_start: bool = False) -> int:
+    """A pontosan ilyen című ablak; by_start esetén, ha nincs ilyen, az, amelyiknek a címe így kezdődik
+    (kis- és nagybetű mindegy).
+
+    A cím elejével olyan ablak is megadható, amelynek a címe nehezen begépelhető (pl. „Veyra — 采集卡 · LIVE”);
+    ezt csak a felhasználó által megadott címnél engedjük, a beépített Remote Play-címnél nem (különben egy
+    „PS Remote Play” kezdetű böngészőlapot is megtalálna). Több találatnál a legnagyobb: a játékablak,
+    nem egy azonos című kis párbeszédablak.
+    """
+    wanted = title.strip()
+    exact = [window for window in windows if wanted and window.title == wanted]
+    starting = [window for window in windows
+                if by_start and wanted and window.title.casefold().startswith(wanted.casefold())]
+    matches = exact or starting
+    if not matches:
+        raise WindowNotFoundError(t("capture.window_not_found", title=title))
+    return max(matches, key=lambda window: window.area).hwnd
+
+
+def _visible_windows() -> list[VisibleWindow]:
+    """A látható, címmel rendelkező felső szintű ablakok; a saját folyamatunké és a rejtetteké
+    (pl. másik virtuális asztalon álló, felfüggesztett alkalmazás) nélkül."""
     user32 = ctypes.windll.user32
-    found: list[int] = []
+    own_process = ctypes.windll.kernel32.GetCurrentProcessId()
+    found: list[VisibleWindow] = []
 
     @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
     def visit(hwnd, _param):
-        if user32.IsWindowVisible(hwnd):
-            length = user32.GetWindowTextLengthW(hwnd)
-            buffer = ctypes.create_unicode_buffer(length + 1)
-            user32.GetWindowTextW(hwnd, buffer, length + 1)
-            if buffer.value == title:
-                found.append(hwnd)
-                return False
+        if not user32.IsWindowVisible(hwnd) or _is_cloaked(hwnd):
+            return True
+        process = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(process))
+        if process.value == own_process:
+            return True
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length == 0:
+            return True
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buffer, length + 1)
+        found.append(VisibleWindow(hwnd, buffer.value, _window_area(hwnd)))
         return True
 
     user32.EnumWindows(visit, 0)
-    if not found:
-        raise WindowNotFoundError(t("capture.window_not_found", title=title))
-    return found[0]
+    return found
+
+
+def _is_cloaked(hwnd: int) -> bool:
+    cloaked = wintypes.DWORD()
+    result = ctypes.windll.dwmapi.DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, ctypes.byref(cloaked),
+                                                        ctypes.sizeof(cloaked))
+    return result == 0 and cloaked.value != 0
+
+
+class _WindowPlacement(ctypes.Structure):
+    _fields_ = [("length", wintypes.UINT), ("flags", wintypes.UINT), ("showCmd", wintypes.UINT),
+                ("ptMinPosition", wintypes.POINT), ("ptMaxPosition", wintypes.POINT),
+                ("rcNormalPosition", wintypes.RECT)]
+
+
+def _window_area(hwnd: int) -> int:
+    """A tartalmi rész területe; lekicsinyített ablaknál a visszaállított mérete (különben 0 lenne,
+    és egy azonos című kis párbeszédablak nyerne a valódi játékablakkal szemben)."""
+    rect = client_rect(hwnd)
+    if rect is not None:
+        return rect.width * rect.height
+    placement = _WindowPlacement()
+    placement.length = ctypes.sizeof(placement)
+    if not ctypes.windll.user32.GetWindowPlacement(hwnd, ctypes.byref(placement)):
+        return 0
+    normal = placement.rcNormalPosition
+    return max(0, normal.right - normal.left) * max(0, normal.bottom - normal.top)
 
 
 def client_rect(hwnd: int) -> ScreenRect | None:

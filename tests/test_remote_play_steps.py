@@ -130,7 +130,7 @@ class Bench:
     def __init__(self, monkeypatch, reader, config):
         self.width = FRAME[0]
         self.reader = reader
-        monkeypatch.setattr(remote_play, "find_window", lambda title: 1)
+        monkeypatch.setattr(remote_play, "find_window", lambda title, **_options: 1)
         monkeypatch.setattr(remote_play, "client_rect", lambda hwnd: ScreenRect(0, 0, self.width, FRAME[1]))
         monkeypatch.setattr(remote_play, "window_exists", lambda hwnd: True)
         monkeypatch.setattr(remote_play, "ScreenGrabber", FakeScreenGrabber)

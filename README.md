@@ -27,8 +27,11 @@ No Python, no installation, no unzipping, just one click:
 1. Put the exe in its own folder (e.g. `C:\GTA6Felirat`), because on first start it
    creates its `config.json` next to itself.
 2. Start PS Remote Play and connect to your console.
-3. Double-click `GTA6Felirat.exe`. It starts in Remote Play mode by default; the
-   subtitles also show up in Medal/OBS monitor recordings and on stream. Startup takes
+3. Double-click `GTA6Felirat.exe`. It finds the source by itself: a running PS Remote
+   Play, otherwise the [Veyra](https://github.com/Likely7/Veyra-NRVideo) window,
+   otherwise a capture card (with several video devices it prints which one to pass
+   with `--device`). The subtitles also show up in Medal/OBS monitor recordings and on
+   stream. Startup takes
    10–20 seconds, because the exe unpacks itself every time it starts.
 4. If SmartScreen warns you: *More info → Run anyway*
    (the exe is not digitally signed).
@@ -268,9 +271,11 @@ The overlay window only shows the picture. For sound, pick one:
 
 | Option | Meaning |
 |---|---|
+| `--auto` | find the source automatically: PS Remote Play, Veyra, capture card (the exe's default) |
 | `--device N` | capture card number |
+| `--capture-api auto\|dshow\|msmf` | how to open the capture card; if it won't open through DirectShow, try `msmf` (config.json: `capture_api`) |
 | `--remote-play` | puts the subtitles over the PS Remote Play window |
-| `--window "TITLE"` | over any window, by its exact title |
+| `--window "TITLE"` | over any window, by its exact title or the start of it (e.g. `--window Veyra`) |
 | `--lang CODE` | target language, e.g. `hu`, `de`, `es` |
 | `--translator NAME` | `auto`, `deepl`, `claude`, `openai`, `google` |
 | `--windowed` | starts in a window |

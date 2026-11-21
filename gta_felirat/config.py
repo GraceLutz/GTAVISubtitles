@@ -8,6 +8,8 @@ from pathlib import Path
 from .i18n import AUTO, UI_LANGUAGES, t
 
 SUPPORTED_TRANSLATORS = ("auto", "deepl", "claude", "openai", "google")
+# A capture card megnyitásának módja: auto (DirectShow, ha az nem megy, Media Foundation), dshow, msmf
+SUPPORTED_CAPTURE_APIS = ("auto", "dshow", "msmf")
 DEFAULT_CLAUDE_MODEL = "claude-haiku-5-5"
 DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
 MIN_FONT_SIZE_RATIO = 0.015
@@ -47,6 +49,7 @@ class Region:
 @dataclass(frozen=True)
 class AppConfig:
     device_index: int = 0
+    capture_api: str = "auto"
     capture_width: int = 1920
     capture_height: int = 1080
     capture_fps: int = 60
@@ -93,6 +96,8 @@ class AppConfig:
             raise ConfigError(t("config.translator_choice", choices=SUPPORTED_TRANSLATORS))
         if self.device_index < 0:
             raise ConfigError(t("config.device_negative"))
+        if self.capture_api not in SUPPORTED_CAPTURE_APIS:
+            raise ConfigError(t("config.capture_api_choice", choices=SUPPORTED_CAPTURE_APIS))
         if self.stable_reads < 1:
             raise ConfigError(t("config.stable_reads_min"))
         if not 0.0 < self.similarity_threshold <= 1.0:
@@ -128,7 +133,8 @@ class AppConfig:
             return
         if self.webcam_device_index < 0:
             raise ConfigError(t("config.webcam_device_negative"))
-        if self.webcam_device_index == self.device_index:
+        # A webkamera DirectShow-sorszámmal nyílik; Media Foundation-ön a kártya ugyanazzal a számmal más eszköz lehet
+        if self.webcam_device_index == self.device_index and self.capture_api != "msmf":
             raise ConfigError(t("config.webcam_same_device"))
 
 

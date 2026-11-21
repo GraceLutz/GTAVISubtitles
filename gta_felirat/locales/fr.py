@@ -41,7 +41,7 @@ MESSAGES: dict[str, str] = {
     "cli.help_device": "numéro de la carte d'acquisition (voir --list-devices)",
     "cli.help_remote_play": ("affiche les sous-titres par-dessus la fenêtre PS Remote Play "
                              "(pas besoin de carte d'acquisition)"),
-    "cli.help_window": "titre d'une autre fenêtre à utiliser à la place de Remote Play, p. ex. Xbox",
+    "cli.help_window": "titre (ou début du titre) d'une autre fenêtre à utiliser à la place de Remote Play, p. ex. Xbox ou Veyra",
     "cli.help_webcam": "numéro de la webcam : ta caméra s'affiche dans le coin",
     "cli.help_translator": "service de traduction",
     "cli.help_lang": "code de la langue cible, p. ex. hu, de, es, pl",
@@ -150,4 +150,13 @@ MESSAGES: dict[str, str] = {
     "vault.load_failed": "Impossible de lire la clé {name} (erreur Windows {code})",
     "vault.save_failed": "Impossible d'enregistrer la clé {name} (erreur Windows {code})",
     "vault.delete_failed": "Impossible de supprimer la clé {name} (erreur Windows {code})",
+    "cli.help_auto": "trouver la source automatiquement : PS Remote Play, Veyra, puis une carte d'acquisition (mode par défaut de l'exe)",
+    "cli.help_capture_api": "mode d'ouverture de la carte d'acquisition : auto, dshow (DirectShow) ou msmf (Media Foundation)",
+    "cli.device_no_picture": "s'ouvre, mais ne donne pas d'image",
+    "cli.auto_device": "Carte d'acquisition : périphérique {index} ({api}).",
+    "cli.choose_device": "Plusieurs périphériques vidéo trouvés. Choisis la carte d'acquisition en lançant par ex. :",
+    "cli.no_source_found": "Aucune source trouvée : PS Remote Play et Veyra ne sont pas lancés et aucune carte d'acquisition n'est branchée. Lance l'un d'eux ou utilise --window \"titre\" / --device N.",
+    "config.capture_api_choice": "capture_api doit être l'une de ces valeurs : {choices}",
+    "capture.window_chosen": "Fenêtre : « {title} »",
+    "capture.device_opened": "Périphérique vidéo {index} ouvert ({api}).",
 }

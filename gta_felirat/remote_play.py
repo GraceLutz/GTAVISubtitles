@@ -51,12 +51,13 @@ class RemotePlayApp(SubtitleAppBase):
     _pipeline: WakingRowPipeline
 
     def __init__(self, config: AppConfig, reader: SubtitleReader, *, window_title: str = DEFAULT_WINDOW_TITLE,
-                 translator: CachedTranslator | None = None, config_path: Path | None = None) -> None:
+                 match_title_start: bool = False, translator: CachedTranslator | None = None,
+                 config_path: Path | None = None) -> None:
         self._row_path: RowPath | None = None  # a pipeline előbb készül el, mint az ébresztő (ahhoz Tk-ablak kell)
         super().__init__(config, reader, translator, config_path)
         # Ezekhez a kis képekhez az OpenCV munkaszálai csak processzort égetnek (mérve: ~7× annyit, gyorsulás nélkül)
         cv2.setNumThreads(1)
-        self._hwnd = find_window(window_title)
+        self._hwnd = find_window(window_title, by_start=match_title_start)
         self._grabber = ScreenGrabber()
         # Elsőként a Remote Play ablak saját tartalmát olvassuk: abban nincs benne a feliratréteg
         self._capture = BandCapture(WindowContentGrabber(self._hwnd), self._grabber, self._shows_only_the_game)
