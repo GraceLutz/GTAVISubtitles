@@ -42,7 +42,7 @@ WINDOW_FLAGS = cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO
 # Az OpenCV a címet ANSI-ként írja ki (az ékezet elromlik), ezért csak ASCII belső nevet kap;
 # a látható címet utána Unicode-dal állítjuk be
 WINDOW_NAME = "GTA6Felirat-clean"
-ANALYSER_THREADS = 4  # sorkeresés és betűtörlés: képkockánként 35–100 ms, a 30 kép/mp-hez több szál kell
+ANALYSER_THREADS = 4  # sorkeresés és betűtörlés: képkockánként 50–150 ms, a 30 kép/mp-hez több szál kell
 
 logger = logging.getLogger(__name__)
 

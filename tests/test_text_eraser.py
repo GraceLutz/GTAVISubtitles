@@ -68,6 +68,38 @@ def test_erasing_leaves_the_picture_outside_the_line_alone():
     assert np.array_equal(image[:erased_box.top - 20], background[:erased_box.top - 20])
 
 
+LETTER_REACH = 6  # a festett betűtől ennyi képponton belül (körvonal, élsimítás) változhat a kép
+
+
+def with_car_details(background):
+    """Éles tárgyrészletek a sor mögött (lámpa, rendszám, lökhárító élei): ezek nem betűk."""
+    image = background.copy()
+    for x in range(INK_LEFT - 40, INK_RIGHT + 40, 37):
+        image[ROW_TOP - 20:ROW_BOTTOM + 20, x:x + 14] = (40, 40, 200)
+    image[(ROW_TOP + ROW_BOTTOM) // 2:(ROW_TOP + ROW_BOTTOM) // 2 + 6, INK_LEFT - 40:INK_RIGHT + 40] = (230, 200, 60)
+    return image
+
+
+def _near_letters():
+    canvas = np.zeros((HEIGHT, WIDTH), np.uint8)
+    for text, x in ((NAME, NAME_LEFT), (SPEECH, SPEECH_LEFT)):
+        cv2.putText(canvas, text, (x, ROW_BOTTOM - 10), FONT, SCALE, 255, 5, cv2.LINE_AA)
+    reach = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * LETTER_REACH + 1, 2 * LETTER_REACH + 1))
+    return cv2.dilate(canvas, reach) > 0
+
+
+def test_erasing_leaves_the_object_between_the_letters_alone():
+    scene = with_car_details(textured_background())
+    image = with_subtitle(scene)
+
+    erase_row(image, CORE)
+
+    between = ~_near_letters()
+    between[:ROW_TOP - 10] = False
+    between[ROW_BOTTOM + 10:] = False
+    assert np.abs(image[between].astype(int) - scene[between]).mean() < 1
+
+
 def test_only_rows_the_state_covers_are_erased():
     image = np.zeros((HEIGHT, WIDTH, 3), np.uint8)
     erased = np.full_like(image, 9)
