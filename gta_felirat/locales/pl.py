@@ -33,7 +33,7 @@ MESSAGES: dict[str, str] = {
     "translator.auto": "Automatycznie",
     "translator.google": "Google (darmowy)",
     # Subtitle panel
-    "layer.preview_text": "Panel napisów – przeciągaj myszą, poszerzaj za krawędź, kółko: rozmiar czcionki, prawy klik: pierwotna pozycja",
+    "layer.preview_text": "Panel napisów – przeciągaj myszą, poszerzaj za boki, podwyższaj za górę lub dół, kółko: rozmiar czcionki, prawy klik: pierwotna pozycja",
     "cli.description": "Przetłumaczony panel napisów dla karty przechwytywania lub PS Remote Play",
     "cli.help_config": "plik ustawień (config.json)",
     "cli.help_device": "numer karty przechwytywania (zob. --list-devices)",
@@ -78,6 +78,7 @@ MESSAGES: dict[str, str] = {
     "config.font_size_range": "font_size_ratio musi być z zakresu od {minimum} do {maximum}",
     "config.opacity_range": "panel_opacity musi być z zakresu od 0 do 255",
     "config.panel_width_range": "panel_width_ratio musi mieścić się między {minimum} a {maximum}",
+    "config.panel_height_range": "panel_height_ratio musi mieścić się między {minimum} a {maximum}",
     "layer.region_hint": "Przeciągnij wnętrze obserwowanego obszaru (ramki), aby go przesunąć, a krawędzie lub rogi, aby zmienić rozmiar.",
     "config.speaker_color_format": "speaker_color musi być kolorem w formacie \"#RRGGBB\", np. \"#7ECFD6\"",
     "config.subtitle_xy_pair": "subtitle_x i subtitle_y muszą być oba null albo oba liczbami",

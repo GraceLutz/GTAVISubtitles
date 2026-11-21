@@ -294,6 +294,8 @@ Az overlay ablak csak képet mutat. A hanghoz válassz egyet:
 | `fast_capture` | `true` | Remote Play mód: a feliratsáv folyamatos rögzítése külön szálon (gyorsabb takarás és olvasás); `false` értékkel visszaáll az olvasásonkénti rögzítés |
 | `row_reading` | `true` | Remote Play mód: soronkénti olvasás – csak az újonnan megjelent feliratsort olvassa be (gyorsabb fordítás, kisebb terhelés); a `fast_capture` kell hozzá és legalább 1600 képpont széles játékkép, különben mindig a teljes sávot olvassa. `false` értékkel mindig a teljes sávot olvassa |
 | `panel_opacity` | `245` | a panel háttere, 0 (átlátszó) – 255 (teljesen fedő) |
+| `panel_width_ratio` | `0.9` | a fordítás legnagyobb szélessége a képszélesség arányában (0.3–1.0); Minta módban a panel oldalát húzva |
+| `panel_height_ratio` | `null` | a panel legkisebb magassága a képmagasság arányában (0.04–0.5); `null` = a szöveghez igazodik; Minta módban a panel tetejét vagy alját húzva |
 | `subtitle_x` / `subtitle_y` | `null` | a panel közepe a kép arányában; `null` = az angol felirat helyén |
 | `font_path` | Segoe UI (vékony, GTA-stílus) | bármilyen `.ttf`; a panel „Vékony betű” kapcsolója Segoe UI és Segoe UI Bold között vált |
 | `speaker_color` | `"#7ECFD6"` | a beszélő nevének színe (`#RRGGBB`), mint a GTA-feliratban |

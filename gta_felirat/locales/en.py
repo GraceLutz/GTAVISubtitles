@@ -33,7 +33,7 @@ MESSAGES: dict[str, str] = {
     "translator.auto": "Automatic",
     "translator.google": "Google (free)",
     # Subtitle panel
-    "layer.preview_text": "Subtitle panel – drag with the mouse, widen it at its edge, wheel: font size, right-click: original position",
+    "layer.preview_text": "Subtitle panel – drag with the mouse, widen it at its sides, make it taller at its top or bottom, wheel: font size, right-click: original position",
     "cli.description": "Translated subtitle panel for a capture card or PS Remote Play",
     "cli.help_config": "settings file (config.json)",
     "cli.help_device": "capture card number (see --list-devices)",
@@ -78,6 +78,7 @@ MESSAGES: dict[str, str] = {
     "config.font_size_range": "font_size_ratio must be between {minimum} and {maximum}",
     "config.opacity_range": "panel_opacity must be between 0 and 255",
     "config.panel_width_range": "panel_width_ratio must be between {minimum} and {maximum}",
+    "config.panel_height_range": "panel_height_ratio must be between {minimum} and {maximum}",
     "layer.region_hint": "Drag inside the watched area (frame) to move it, drag its edges or corners to resize it.",
     "config.speaker_color_format": "speaker_color must be a \"#RRGGBB\" color, e.g. \"#7ECFD6\"",
     "config.subtitle_xy_pair": "subtitle_x and subtitle_y must both be null or both be numbers",

@@ -33,7 +33,7 @@ MESSAGES: dict[str, str] = {
     "translator.auto": "Automatikus",
     "translator.google": "Google (ingyenes)",
     # Feliratpanel
-    "layer.preview_text": "Feliratpanel – húzd egérrel, a szélénél szélesítsd, görgővel betűméret, jobb klikk: eredeti hely",
+    "layer.preview_text": "Feliratpanel – húzd egérrel, oldalt szélesítsd, a tetejénél vagy aljánál magasítsd, görgővel betűméret, jobb klikk: eredeti hely",
     "cli.description": "Lefordított feliratpanel capture cardhoz vagy PS Remote Playhez",
     "cli.help_config": "beállításfájl (config.json)",
     "cli.help_device": "capture card sorszáma (lásd --list-devices)",
@@ -76,6 +76,7 @@ MESSAGES: dict[str, str] = {
     "config.font_size_range": "font_size_ratio {minimum} és {maximum} közé essen",
     "config.opacity_range": "panel_opacity 0 és 255 közé essen",
     "config.panel_width_range": "panel_width_ratio {minimum} és {maximum} közé essen",
+    "config.panel_height_range": "panel_height_ratio {minimum} és {maximum} közé essen",
     "layer.region_hint": "A figyelt sáv (keret) belül megfogva áthelyezhető, a szélénél és a sarkánál méretezhető.",
     "config.speaker_color_format": "speaker_color \"#RRGGBB\" alakú szín legyen, pl. \"#7ECFD6\"",
     "config.subtitle_xy_pair": "subtitle_x és subtitle_y vagy mindkettő null, vagy mindkettő szám",

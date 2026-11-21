@@ -306,6 +306,8 @@ The overlay window only shows the picture. For sound, pick one:
 | `fast_capture` | `true` | Remote Play mode: capture the subtitle band continuously on its own thread (faster cover and reading); set `false` to go back to one capture per read |
 | `row_reading` | `true` | Remote Play mode: read row by row – only a newly appeared subtitle row is read (faster translation, less CPU); needs `fast_capture` and a game picture at least 1600 px wide, otherwise the whole bar is read every time. Set `false` to always read the whole bar |
 | `panel_opacity` | `245` | panel background, 0 (transparent) – 255 (fully opaque) |
+| `panel_width_ratio` | `0.9` | widest translation as a fraction of the picture width (0.3–1.0); in preview, drag the panel's side |
+| `panel_height_ratio` | `null` | lowest panel height as a fraction of the picture height (0.04–0.5); `null` = fits the text; in preview, drag the panel's top or bottom |
 | `subtitle_x` / `subtitle_y` | `null` | panel center as a fraction of the picture; `null` = at the English subtitle |
 | `font_path` | Segoe UI (thin, GTA style) | any `.ttf`; the panel's “Thin font” switch toggles between Segoe UI and Segoe UI Bold |
 | `speaker_color` | `"#7ECFD6"` | color of the speaker's name (`#RRGGBB`), like in GTA's subtitles |

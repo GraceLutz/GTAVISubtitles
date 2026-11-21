@@ -25,6 +25,8 @@ MIN_COVER_FEATHER_PX = 8  # a takarás lágy szélének szélessége legalább e
 COVER_PADDING_PX = 4  # a lágy szél a betűkön kívül kezdődjön
 PREVIEW_ROWS = 3  # a Minta módban ennyi sor magas a panel: így látszik és fogható meg a teljes területe
 CLICKABLE_ALPHA = 1  # az átlátszó rétegen a teljesen átlátszó képpontra kattintás átmegy a játékra
+# A mintapanel ennyire áll a sávtól: a panel alja és a sáv teteje külön-külön megfogható maradjon
+PREVIEW_GAP_PX = 40
 
 
 @dataclass(frozen=True)
@@ -172,6 +174,7 @@ def _line_by_line_jobs(config: AppConfig, view: LayerView, shown: Shown,
     left, top = min(job.x for job in texts), min(job.y for job in texts)
     right = max(job.x + job.rendered.width for job in texts)
     bottom = max(job.y + job.rendered.height for job in texts)
+    top, bottom = _grown_to(top, bottom, _min_height(config, view), view.height)
     panel = BoxJob(clip(Box(left, top, right, bottom), view.width, view.height), config.panel_opacity)
     return panel, tuple(texts), (left, top, right - left, bottom - top)
 
@@ -206,11 +209,12 @@ def _block_text(config: AppConfig, view: LayerView, shown: Shown,
     speaker = hex_to_rgb(config.speaker_color)
     max_width = _wrap_width(int(view.width * config.panel_width_ratio), font_size)
     if view.custom_center is not None:
-        rendered = render_subtitle(shown.text, config.font_path, font_size, max_width, (0, 0),
-                                   config.panel_opacity, speaker)
+        rendered = render_subtitle(shown.text, config.font_path, font_size, max_width,
+                                   (0, _min_height(config, view)), config.panel_opacity, speaker)
         return rendered, centered_position(rendered, *view.custom_center, view.width, view.height)
     anchor = shown.anchor
     min_panel = (anchor.width + font_size, anchor.height + font_size // 2) if view.hide_original else (0, 0)
+    min_panel = (min_panel[0], max(min_panel[1], _min_height(config, view)))
     rendered = render_subtitle(shown.text, config.font_path, font_size, max_width, min_panel,
                                config.panel_opacity, speaker)
     if view.hide_original:
@@ -223,16 +227,29 @@ def _preview_text(config: AppConfig, view: LayerView, shown: Shown,
     """A Minta mód panelje a beállított teljes szélességben és néhány sor magasan, hogy látszódjon, meddig ér
     a fordítás, és bárhol megfogható legyen (átlátszó panelnél is: alig látható, de kattintható alappal)."""
     width = int(view.width * config.panel_width_ratio)
-    height = int(font_size * (1 + LINE_SPACING_RATIO)) * PREVIEW_ROWS
+    height = _min_height(config, view) or int(font_size * (1 + LINE_SPACING_RATIO)) * PREVIEW_ROWS
     rendered = render_subtitle(shown.text, config.font_path, font_size, _wrap_width(width, font_size), (width, height),
                                max(config.panel_opacity, CLICKABLE_ALPHA), hex_to_rgb(config.speaker_color))
     if view.custom_center is not None:
         return rendered, centered_position(rendered, *view.custom_center, view.width, view.height)
     # A sáv mellé, nem a közepére: így a sáv belseje is megfogható, és az OCR is látja a sávot
     return rendered, beside_original_position(rendered, shown.anchor, view.width, view.height,
-                                              gap=font_size // 2)
+                                              gap=max(font_size // 2, PREVIEW_GAP_PX))
 
 
 def _wrap_width(panel_width: int, font_size: int) -> int:
     """Ilyen szélesen törhet a szöveg, hogy a belső margóval együtt se legyen szélesebb a panelnél."""
     return max(panel_width - 2 * int(font_size * PANEL_PADDING_RATIO), font_size)
+
+
+def _min_height(config: AppConfig, view: LayerView) -> int:
+    """A beállított legkisebb panelmagasság képpontban (0: a szöveghez igazodik)."""
+    return int(view.height * config.panel_height_ratio) if config.panel_height_ratio else 0
+
+
+def _grown_to(top: int, bottom: int, min_height: int, frame_height: int) -> tuple[int, int]:
+    """A sáv (top, bottom) legalább min_height magasra nő, a közepe körül, a képen belül."""
+    if bottom - top >= min_height:
+        return top, bottom
+    new_top = max(min((top + bottom) // 2 - min_height // 2, frame_height - min_height), 0)
+    return new_top, min(new_top + min_height, frame_height)

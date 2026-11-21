@@ -16,6 +16,8 @@ MIN_FONT_SIZE_RATIO = 0.015
 MAX_FONT_SIZE_RATIO = 0.08
 MIN_PANEL_WIDTH_RATIO = 0.3  # ennél keskenyebb panelben a magyar mondat túl sok sorba törne
 MAX_PANEL_WIDTH_RATIO = 1.0
+MIN_PANEL_HEIGHT_RATIO = 0.04  # kb. egy sor
+MAX_PANEL_HEIGHT_RATIO = 0.5
 # Vékony (a GTA-feliratokhoz hasonló) és félkövér betű; a panelen váltható
 THIN_FONT_PATH = "C:/Windows/Fonts/segoeui.ttf"
 BOLD_FONT_PATH = "C:/Windows/Fonts/segoeuib.ttf"
@@ -79,6 +81,9 @@ class AppConfig:
     panel_opacity: int = 245
     # A fordítás legfeljebb ilyen széles (a kép szélességéhez mérve); a Minta módban a panel szélénél húzva állítható
     panel_width_ratio: float = 0.9
+    # A panel legalább ilyen magas (a kép magasságához mérve); None: épp akkora, amekkora a szöveg.
+    # A Minta módban a panel tetejét vagy alját húzva állítható
+    panel_height_ratio: float | None = None
     subtitle_x: float | None = None  # None: az eredeti felirat helyén
     subtitle_y: float | None = None
     font_path: str = DEFAULT_FONT_PATH
@@ -123,6 +128,10 @@ class AppConfig:
         if not MIN_PANEL_WIDTH_RATIO <= self.panel_width_ratio <= MAX_PANEL_WIDTH_RATIO:
             raise ConfigError(t("config.panel_width_range", minimum=MIN_PANEL_WIDTH_RATIO,
                                 maximum=MAX_PANEL_WIDTH_RATIO))
+        if self.panel_height_ratio is not None and not (
+                MIN_PANEL_HEIGHT_RATIO <= self.panel_height_ratio <= MAX_PANEL_HEIGHT_RATIO):
+            raise ConfigError(t("config.panel_height_range", minimum=MIN_PANEL_HEIGHT_RATIO,
+                                maximum=MAX_PANEL_HEIGHT_RATIO))
         if not isinstance(self.speaker_color, str) or not HEX_COLOR_PATTERN.match(self.speaker_color):
             raise ConfigError(t("config.speaker_color_format"))
         if (self.subtitle_x is None) != (self.subtitle_y is None):

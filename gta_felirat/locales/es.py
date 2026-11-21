@@ -33,7 +33,7 @@ MESSAGES: dict[str, str] = {
     "translator.auto": "Automático",
     "translator.google": "Google (gratis)",
     # Subtitle panel
-    "layer.preview_text": "Panel de subtítulos – arrástralo con el ratón, ensánchalo por el borde, rueda: tamaño de letra, clic derecho: posición original",
+    "layer.preview_text": "Panel de subtítulos – arrástralo con el ratón, ensánchalo por los lados, hazlo más alto por arriba o por abajo, rueda: tamaño de letra, clic derecho: posición original",
     "cli.description": "Panel de subtítulos traducidos para capturadora o PS Remote Play",
     "cli.help_config": "archivo de ajustes (config.json)",
     "cli.help_device": "número de la capturadora (ver --list-devices)",
@@ -78,6 +78,7 @@ MESSAGES: dict[str, str] = {
     "config.font_size_range": "font_size_ratio debe estar entre {minimum} y {maximum}",
     "config.opacity_range": "panel_opacity debe estar entre 0 y 255",
     "config.panel_width_range": "panel_width_ratio debe estar entre {minimum} y {maximum}",
+    "config.panel_height_range": "panel_height_ratio debe estar entre {minimum} y {maximum}",
     "layer.region_hint": "Arrastra dentro de la zona vigilada (marco) para moverla, y sus bordes o esquinas para cambiar su tamaño.",
     "config.speaker_color_format": "speaker_color debe ser un color \"#RRGGBB\", p. ej. \"#7ECFD6\"",
     "config.subtitle_xy_pair": "subtitle_x y subtitle_y deben ser ambos null o ambos números",
