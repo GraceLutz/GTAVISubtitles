@@ -46,6 +46,24 @@ def test_bracketed_caption_row_is_left_out_and_does_not_swallow_the_spoken_row_b
     assert lines == (OcrLine("Lucia: Baby, this has been a long time comin'.", LOWER, (LOWER,)),)
 
 
+@pytest.mark.parametrize("first_row", ["Tourists: Okay, mister, I have had it up to here, okay.",
+                                       "Tourists: Okay, mister, I have had it up to here, okay,"])
+def test_period_misread_as_comma_before_a_capitalised_row_still_ends_the_sentence(first_row):
+    # A játék betűjében a sor végi pont vesszőnek is látszik: a felirat szerkezete ne ugráljon olvasásonként
+    lines = spoken_lines([(first_row, UPPER), ("Just what the hell is your problem?", LOWER)])
+
+    assert [line.text for line in lines] == ["Tourists: Okay, mister, I have had it up to here, okay.",
+                                             "Just what the hell is your problem?"]
+
+
+@pytest.mark.parametrize("second_row", ["I'm this close to kick your ass.", "i'm this close to kick your ass."])
+def test_comma_before_a_first_person_row_still_continues_the_sentence(second_row):
+    lines = spoken_lines([("Tourists: In Spanish: Look you piece of shit,", UPPER), (second_row, LOWER)])
+
+    assert len(lines) == 1
+    assert lines[0].text.startswith("Tourists: In Spanish: Look you piece of shit, ")
+
+
 def test_row_starting_with_a_speaker_starts_a_new_spoken_line_after_an_unfinished_row():
     lines = spoken_lines([("Lucia: Well, Vicki is really curious, but", UPPER), ("Jason: Who's that up there?", LOWER)])
 

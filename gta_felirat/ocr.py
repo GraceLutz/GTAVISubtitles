@@ -10,7 +10,7 @@ keresés a kapcsolótól függetlenül a sáv középső részét nézi.
 
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 
 import cv2
@@ -195,6 +195,8 @@ def is_spoken_line(text: str) -> bool:
 _SPOKEN_ENDING = re.compile(r"[?!][\"'”’)\]]*$")
 # Kisbetűvel (az „I” mindig nagy): a menü „About Us” nagybetűs szava nem beszéd
 _FIRST_PERSON = re.compile(r"\b(?:I(?:['’](?:m|ll|ve|d))?|[Mm]e|[Mm]y|mine|[Ww]e(?:['’](?:re|ll|ve))?|us|[Oo]ur)\b")
+# Az „I” alakjai: sortörés után is nagybetűsek, a mondat folytatódhat velük
+_FIRST_PERSON_SINGULAR = re.compile(r"[Ii](?:['’](?:m|ll|ve|d))?")
 
 
 def sounds_spoken(text: str) -> bool:
@@ -267,6 +269,16 @@ def is_caption_row(text: str) -> bool:
     return bool(CAPTION_ROW.search(text.strip()))
 
 
+def _ends_with_misread_period(previous: str, row: str) -> bool:
+    """A sor végi „,” valójában pont: a játék betűjében a kettő képről képre összetéveszthető.
+
+    A sortörés utáni folytatás kisbetűvel kezdődik (kivéve az „I” alakjait); nagybetűs szó után új mondat jön.
+    """
+    first_word = row.lstrip("\"'“‘(").split(" ", 1)[0]
+    return (previous.endswith(",") and first_word[:1].isupper()
+            and not _FIRST_PERSON_SINGULAR.fullmatch(first_word.rstrip(",.!?…")))
+
+
 def spoken_lines(fragments: list[tuple[str, Box]]) -> tuple[OcrLine, ...]:
     """Megszólalásonként egy sor: a lezáratlan mondat a következő képernyősorban folytatódik,
     kivéve ha az a sor új beszélővel kezdődik. A zárójeles hang- és zenefeliratot kihagyjuk."""
@@ -275,6 +287,9 @@ def spoken_lines(fragments: list[tuple[str, Box]]) -> tuple[OcrLine, ...]:
         if is_caption_row(row.text):
             continue
         starts_new_speaker = bool(SPEAKER_PATTERN.match(clean_ocr_text(row.text)))
+        if lines and _ends_with_misread_period(lines[-1].text.rstrip(), row.text):
+            previous = lines.pop()
+            lines.append(replace(previous, text=previous.text.rstrip()[:-1] + "."))
         if lines and not starts_new_speaker and not lines[-1].text.endswith(SENTENCE_END):
             previous = lines.pop()
             row = OcrLine(f"{previous.text} {row.text}", union_box([previous.box, row.box]),
