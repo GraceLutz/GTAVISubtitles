@@ -1,9 +1,11 @@
+from concurrent.futures import Future
+
 import numpy as np
 import pytest
 
 from gta_felirat import clean_output
-from gta_felirat.clean_history import SETTLE_SECONDS, FrameBuffer, ShownHistory
-from gta_felirat.clean_output import CleanOutput, draw_on_frame
+from gta_felirat.clean_history import FrameBuffer, ShownHistory
+from gta_felirat.clean_output import CapturedFrame, CleanOutput, draw_on_frame
 from gta_felirat.config import AppConfig, ConfigError
 from gta_felirat.frosted_cover import Backdrop
 from gta_felirat.layer_plan import Shown, ShownLine
@@ -14,8 +16,10 @@ LOWER = Box(780, 957, 1140, 994)
 UPPER = Box(700, 915, 1220, 948)
 FIRST, SECOND = "Cut it, cut it.", "So what I was doin'?"
 COVER_ONLY = Shown("", LOWER, (), (LOWER,))
-FIRST_HU = Shown("Vágd le, vágd le!", LOWER)
-SECOND_HU = Shown("Szóval mit csináltam?", UPPER)
+FIRST_HU = Shown("Vágd le, vágd le!", LOWER, (ShownLine("Vágd le, vágd le!", LOWER),))
+SECOND_HU = Shown("Szóval mit csináltam?", LOWER, (ShownLine("Szóval mit csináltam?", LOWER),))
+# A játék feljebb görgette az első sort (új beszélő jött alá): a fordítása már fent áll, alatta takarás
+FIRST_SCROLLED = Shown("Vágd le, vágd le!", UPPER, (ShownLine("Vágd le, vágd le!", UPPER),), (LOWER,))
 
 
 def history_of(*entries):
@@ -28,32 +32,41 @@ def history_of(*entries):
 def test_frame_gets_the_finished_translation_not_the_cover_shown_at_that_moment():
     history = history_of((10.0, COVER_ONLY, FIRST), (10.5, FIRST_HU, FIRST))
 
-    assert history.settled(9.8) == FIRST_HU
+    assert history.for_frame(10.0, 11.0, [LOWER]) == FIRST_HU
 
 
-def test_frame_where_the_new_line_just_appeared_gets_its_translation_not_the_old_one():
-    # A pipeline az új feliratot csak a képen való megjelenése után ismeri fel: addig a régi állapot volt kint
-    history = history_of((10.0, FIRST_HU, FIRST), (12.2, COVER_ONLY, SECOND), (12.6, SECOND_HU, SECOND))
+def test_frame_before_the_scroll_keeps_the_translation_where_the_line_stood_on_that_frame():
+    # A felirat utolsó állapota már a görgetett helyet mutatja: a korábbi képkockán a sor még lent állt
+    history = history_of((10.0, FIRST_HU, FIRST), (12.0, FIRST_SCROLLED, FIRST))
 
-    assert history.settled(12.2 - SETTLE_SECONDS + 0.05) == SECOND_HU
-
-
-def test_frame_before_the_change_keeps_the_previous_subtitle():
-    history = history_of((10.0, FIRST_HU, FIRST), (12.2, SECOND_HU, SECOND))
-
-    assert history.settled(11.0) == FIRST_HU
+    assert history.for_frame(11.5, 12.5, [LOWER]) == FIRST_HU
 
 
-def test_frame_without_subtitle_gets_nothing():
-    history = history_of((10.0, FIRST_HU, FIRST), (11.0, None, ""))
+def test_next_subtitle_in_the_same_place_does_not_replace_the_current_one():
+    history = history_of((10.0, FIRST_HU, FIRST), (11.0, SECOND_HU, SECOND))
 
-    assert history.settled(11.0) is None
+    assert history.for_frame(10.2, 11.2, [LOWER]) == FIRST_HU
 
 
-def test_frame_older_than_the_history_gets_nothing():
+def test_row_that_no_state_covers_gets_a_cover_instead_of_showing_english():
     history = history_of((10.0, FIRST_HU, FIRST))
 
-    assert history.settled(9.0) is None
+    shown = history.for_frame(10.0, 11.0, [LOWER, UPPER])
+
+    assert shown.lines == FIRST_HU.lines and UPPER in shown.hidden
+
+
+def test_row_is_covered_even_without_any_recorded_state():
+    shown = ShownHistory(keep_seconds=5.0).for_frame(10.0, 11.0, [UPPER])
+
+    assert shown.text == "" and shown.hidden == (UPPER,)
+
+
+def test_frame_without_found_rows_gets_the_state_in_force_after_recognition():
+    history = history_of((10.0, FIRST_HU, FIRST), (11.0, None, ""))
+
+    assert history.for_frame(10.0, 11.0, []) == FIRST_HU
+    assert history.for_frame(11.0, 12.0, []) is None
 
 
 def test_old_states_are_dropped_but_the_one_still_in_force_is_kept():
@@ -61,9 +74,9 @@ def test_old_states_are_dropped_but_the_one_still_in_force_is_kept():
     history.record(10.0, FIRST_HU, FIRST)
     history.record(20.0, SECOND_HU, SECOND)
 
-    assert history.settled(15.0) == FIRST_HU  # 15-kor még a 10-kor beállt állapot érvényes
+    assert history.for_frame(15.0, 16.0, None) == FIRST_HU  # 15-kor még a 10-kor beállt állapot érvényes
     history.record(25.0, None, "")
-    assert history.settled(15.0) is None  # a 20 előtti állapot már kiesett
+    assert history.for_frame(15.0, 16.0, None) is None  # a 20 előtti állapot már kiesett
 
 
 def test_frame_buffer_gives_the_latest_frame_not_newer_than_asked():
@@ -110,7 +123,7 @@ def test_delayed_frame_is_drawn_with_the_settled_translation(monkeypatch):
     english = np.zeros((FRAME_SIZE[1], FRAME_SIZE[0], 3), np.uint8)
     english[LOWER.top:LOWER.bottom, LOWER.left:LOWER.right] = 255  # az angol felirat helye világos
     frames = FrameBuffer(keep_seconds=2.0)
-    frames.push(10.0, english)
+    frames.push(10.0, CapturedFrame(english))
     output.history.record(10.0, COVER_ONLY, FIRST)
     output.history.record(10.3, FIRST_HU, FIRST)  # a fordítás később érkezett
 
@@ -129,7 +142,7 @@ def test_nothing_is_shown_until_a_frame_old_enough_exists(monkeypatch):
     config = AppConfig()
     output = CleanOutput(hwnd=0, config=config)
     frames = FrameBuffer(keep_seconds=2.0)
-    frames.push(10.0, np.zeros((4, 4, 3), np.uint8))
+    frames.push(10.0, CapturedFrame(np.zeros((4, 4, 3), np.uint8)))
 
     output._show("clean", SubtitleLayer(config, on_change=lambda _c: None), frames, now=10.5)
 
@@ -146,3 +159,28 @@ def test_drawing_on_the_crop_gives_the_same_picture_as_drawing_on_the_whole_fram
     plan = layer.plan(FRAME_SIZE, shown, True, backdrop=backdrop)
 
     assert np.array_equal(draw_on_frame(frame, plan), layer.draw(frame, shown, True, backdrop=backdrop))
+
+
+def test_translation_shown_as_one_block_counts_as_covering_its_rows():
+    block = Shown("Vágd le, vágd le!", LOWER)
+    history = history_of((10.0, COVER_ONLY, FIRST), (10.5, block, FIRST))
+
+    assert history.for_frame(10.0, 11.0, [LOWER]) == block
+
+
+def test_rows_found_in_the_background_are_covered_even_without_any_state(monkeypatch):
+    shown_images = []
+    monkeypatch.setattr(clean_output.cv2, "imshow", lambda _title, image: shown_images.append(image))
+    config = AppConfig()
+    output = CleanOutput(hwnd=0, config=config)
+    english = np.zeros((FRAME_SIZE[1], FRAME_SIZE[0], 3), np.uint8)
+    english[UPPER.top:UPPER.bottom, UPPER.left:UPPER.right] = 255
+    found = Future()
+    found.set_result([UPPER])
+    frames = FrameBuffer(keep_seconds=2.0)
+    frames.push(10.0, CapturedFrame(english, found))
+
+    output._show("clean", SubtitleLayer(config, on_change=lambda _c: None), frames, now=11.05)
+
+    assert not np.array_equal(shown_images[0][UPPER.top:UPPER.bottom, UPPER.left:UPPER.right],
+                              english[UPPER.top:UPPER.bottom, UPPER.left:UPPER.right])

@@ -10,10 +10,12 @@ Az OpenCV ablakkezelése szálhoz kötött, ezért a nyitás, a frissítés és 
 
 from __future__ import annotations
 
+import ctypes
 import logging
 import threading
 import time
-from dataclasses import replace
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 import cv2
@@ -25,7 +27,8 @@ from .clean_history import HISTORY_SLACK_SECONDS, FrameBuffer, ShownHistory
 from .frosted_cover import Backdrop
 from .i18n import t
 from .layer_plan import CoverJob, LayerPlan
-from .ocr import Box
+from .ocr import Box, region_to_box
+from .row_finder import find_rows, is_wide_enough
 from .subtitle_layer import SubtitleLayer, draw_plan
 from .window_stream import WindowStream, WindowStreamError
 
@@ -36,8 +39,19 @@ FPS = 30.0
 POLL_SECONDS = 0.004  # ilyen sűrűn nézzük, jött-e új képkocka
 RETRY_SECONDS = 2.0  # ha a rögzítés nem indul vagy megszakad, ennyi múlva próbáljuk újra
 WINDOW_FLAGS = cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO
+# Az OpenCV a címet ANSI-ként írja ki (az ékezet elromlik), ezért csak ASCII belső nevet kap;
+# a látható címet utána Unicode-dal állítjuk be
+WINDOW_NAME = "GTA6Felirat-clean"
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class CapturedFrame:
+    image: np.ndarray
+    # A képkocka feliratsorai, a rögzítéskor a háttérben keresve (mire a kép sorra kerül, kész);
+    # None: megjelenítéskor keressük
+    rows: Future[list[Box] | None] | None = None
 
 
 class CleanOutput:
@@ -49,6 +63,7 @@ class CleanOutput:
         self.history = ShownHistory(config.clean_output_delay_seconds + HISTORY_SLACK_SECONDS)
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
+        self._row_finder: ThreadPoolExecutor | None = None
 
     @property
     def is_running(self) -> bool:
@@ -71,10 +86,12 @@ class CleanOutput:
             thread.join(timeout=2.0)
 
     def _run(self) -> None:
-        title = t("clean.window_title")
+        title = WINDOW_NAME
         layer = SubtitleLayer(self._config, on_change=lambda _changes: None)
         frames = FrameBuffer(self._config.clean_output_delay_seconds + HISTORY_SLACK_SECONDS)
+        self._row_finder = ThreadPoolExecutor(max_workers=1, thread_name_prefix="clean-rows")
         cv2.namedWindow(title, WINDOW_FLAGS)
+        _show_title(title, t("clean.window_title"))
         try:
             while not self._stop.is_set():
                 try:
@@ -85,6 +102,7 @@ class CleanOutput:
                     self._stop.wait(RETRY_SECONDS)
         finally:
             cv2.destroyWindow(title)
+            self._row_finder.shutdown(wait=False, cancel_futures=True)
 
     def _stream_until_stopped(self, title: str, layer: SubtitleLayer, frames: FrameBuffer) -> None:
         stream = WindowStream(self._hwnd, 1.0 / FPS)
@@ -107,7 +125,8 @@ class CleanOutput:
             client = client_box_in_frame(self._hwnd)
             if client is None or not fits(client, *frame_size):
                 return False
-            frames.push(now, stream.read_box(client))
+            image = stream.read_box(client)
+            frames.push(now, CapturedFrame(image, self._row_finder.submit(_subtitle_rows, image, self._config)))
         return True
 
     def _show(self, title: str, layer: SubtitleLayer, frames: FrameBuffer, now: float) -> None:
@@ -115,12 +134,42 @@ class CleanOutput:
         found = frames.at_or_before(now - config.clean_output_delay_seconds)
         if found is None:
             return  # még nincs ilyen régi kép (épp most indult)
-        frame_at, frame = found
+        frame_at, captured = found
+        frame = captured.image
         layer.update_config(config)
-        shown = self.history.settled(frame_at)
         height, width = frame.shape[:2]
+        shown = self.history.for_frame(frame_at, now, _rows_of(captured, config))
         plan = layer.plan((width, height), shown, True, backdrop=Backdrop(frame, Box(0, 0, width, height)))
         cv2.imshow(title, frame if plan is None else draw_on_frame(frame, plan))
+
+
+def _rows_of(captured: CapturedFrame, config: AppConfig) -> list[Box] | None:
+    if captured.rows is None:
+        return _subtitle_rows(captured.image, config)
+    try:
+        return captured.rows.result()
+    except (ValueError, cv2.error) as err:
+        logger.warning("Clean picture row search failed: %s", err)
+        return None  # ilyenkor az idő szerint döntünk, mint az élő réteg
+
+
+def _subtitle_rows(frame: np.ndarray, config: AppConfig) -> list[Box] | None:
+    """A képkockán biztosan megtalált feliratsorok (ugyanaz a sorkereső, mint élőben); None, ha a kép ehhez
+    túl keskeny."""
+    height, width = frame.shape[:2]
+    if not is_wide_enough(width):
+        return None
+    area = region_to_box(config.subtitle_region, width, height)
+    band = frame[area.top:area.bottom, area.left:area.right]
+    return [row.box for row in find_rows(band, area, (width, height)) if row.sure]
+
+
+def _show_title(name: str, title: str) -> None:
+    """Az OpenCV-ablak látható címe ékezetekkel."""
+    user32 = ctypes.windll.user32
+    hwnd = user32.FindWindowW(None, name)
+    if hwnd and not user32.SetWindowTextW(hwnd, title):
+        logger.debug("Clean window title could not be set")
 
 
 def draw_on_frame(frame: np.ndarray, plan: LayerPlan) -> np.ndarray:

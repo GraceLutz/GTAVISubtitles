@@ -1,27 +1,31 @@
 """A késleltetett tiszta kép alapja: a játékképek és a feliratállapotok rövid története, időbélyeggel.
 
 A feliratréteg mindig kicsit lemarad a játéktól: az új angol sort csak a felismerése után takarja, és a fordítás
-is idő. A tiszta kép ezért régebbi képkockát mutat, és arra azt az állapotot rajzolja, amelyik ahhoz a felirathoz
-végül kialakult (a kész fordítást), nem azt, ami a képkocka pillanatában éppen kint volt.
+is idő. A tiszta kép ezért régebbi képkockát mutat, és arra azt az állapotot rajzolja, amelyik a képkockán látható
+sorokat fedi, lehetőleg kész fordítással (pick_shown).
 
-Melyik feliratot látjuk a képkockán: amelyik SETTLE_SECONDS-szal később a pipeline aktuális szövege volt (eddigre a
-felismerés és a megerősítés biztosan utolérte a képet). Ennek a feliratnak a legutolsó ismert állapota kerül rá.
+A képkocka sorait a tiszta kép maga keresi meg (row_finder): így a takarás oda kerül, ahol a sor azon a képen
+áll, akkor is, ha a játék közben feljebb görgette (új beszélő), vagy a következő felirat már ott áll. A
+legutolsó állapot erre nem jó: az többnyire már az átmenet pillanata, a következő sor takarásával.
 """
 
 from __future__ import annotations
 
 import threading
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
+
+from .layer_plan import Shown
 
 if TYPE_CHECKING:
     import numpy as np
 
-    from .layer_plan import Shown
+    from .ocr import Box
 
 SETTLE_SECONDS = 0.4  # ennyi idő alatt a pipeline biztosan felismeri és megerősíti a képen megjelent feliratot
 HISTORY_SLACK_SECONDS = 1.0  # a késleltetésen túl ennyi régebbi állapotot is megtartunk
+MIN_COVER_RATIO = 0.5  # a sor magasságának és szélességének ekkora részét fedje a takarás vagy a fordítás
 
 
 @dataclass(frozen=True)
@@ -48,18 +52,77 @@ class ShownHistory:
             while len(self._entries) > 1 and self._entries[1].at < at - self._keep_seconds:
                 self._entries.popleft()  # az utolsó, még érvényes régi állapot marad
 
-    def settled(self, frame_at: float) -> Shown | None:
-        """A képkockán látszó felirat végleges (legutolsó ismert) állapota."""
+    def between(self, start: float, end: float) -> list[ShownEntry]:
+        """A start pillanatában érvényes állapot és az end-ig követő többi, időrendben."""
         with self._lock:
             entries = list(self._entries)
-        seen_at = frame_at + SETTLE_SECONDS
-        index = next((i for i in range(len(entries) - 1, -1, -1) if entries[i].at <= seen_at), None)
-        if index is None:
-            return None
-        source = entries[index].source
-        while index + 1 < len(entries) and entries[index + 1].source == source:
-            index += 1  # ugyanannak a feliratnak a későbbi állapota: a fordítás közben elkészült
-        return entries[index].shown
+        first = next((i for i in range(len(entries) - 1, -1, -1) if entries[i].at <= start), 0)
+        return [entry for entry in entries[first:] if entry.at <= end]
+
+    def for_frame(self, frame_at: float, until: float, rows: list[Box] | None) -> Shown | None:
+        """A képkockára rajzolandó állapot. rows: a képkockán biztosan megtalált feliratsorok (üres vagy None:
+        nem találtunk / nem kerestünk; ilyenkor csak az idő szerint dönthetünk, mint az élő réteg)."""
+        entries = self.between(frame_at, until)
+        if not rows:
+            return _in_force(entries, frame_at + SETTLE_SECONDS)
+        source = _source_at(entries, frame_at + SETTLE_SECONDS)
+        return pick_shown([entry for entry in entries if entry.shown is not None], rows, source)
+
+
+def _in_force(entries: list[ShownEntry], moment: float) -> Shown | None:
+    found = [entry for entry in entries if entry.at <= moment]
+    return found[-1].shown if found else None
+
+
+def _source_at(entries: list[ShownEntry], moment: float) -> str:
+    found = [entry for entry in entries if entry.at <= moment]
+    return found[-1].source if found else ""
+
+
+def is_covered(row: Box, boxes: list[Box]) -> bool:
+    for box in boxes:
+        height = min(row.bottom, box.bottom) - max(row.top, box.top)
+        width = min(row.right, box.right) - max(row.left, box.left)
+        if height >= MIN_COVER_RATIO * row.height and width >= MIN_COVER_RATIO * row.width:
+            return True
+    return False
+
+
+def _text_boxes(shown: Shown) -> list[Box]:
+    """Ahol fordítás áll: soronként, vagy egy tömbben az eredeti felirat helyén."""
+    if shown.lines:
+        return [line.anchor for line in shown.lines]
+    return [shown.anchor] if shown.text else []
+
+
+def _score(entry: ShownEntry, rows: list[Box], source: str, order: int) -> tuple:
+    shown = entry.shown
+    anchors = _text_boxes(shown)
+    missing = sum(not is_covered(row, anchors + list(shown.hidden)) for row in rows)
+    translated = sum(is_covered(row, anchors) for row in rows)
+    stray = sum(not any(is_covered(row, [anchor]) or is_covered(anchor, [row]) for row in rows)
+                for anchor in anchors)  # fordítás ott, ahol a képen nincs sor
+    # Elöl a fedés, aztán hogy ugyanaz a felirat-e, aztán a fordítás; egyenlőségnél a korábbi (a következő
+    # felirat ugyanazon a helyen később áll be)
+    return (-missing, entry.source == source, translated, -stray, -order)
+
+
+def pick_shown(entries: list[ShownEntry], rows: list[Box], source: str) -> Shown | None:
+    """Az az állapot, amelyik a képkocka sorait fedi, lehetőleg fordítással; a fedetlen sorokra takarás kerül."""
+    best = max(entries, key=lambda entry: _score(entry, rows, source, entries.index(entry)), default=None)
+    shown = best.shown if best is not None else None
+    boxes = [] if shown is None else _text_boxes(shown) + list(shown.hidden)
+    missing = tuple(row for row in rows if not is_covered(row, boxes))
+    if not missing:
+        return shown
+    if shown is None:
+        return Shown("", _union(list(missing)), (), missing)
+    return replace(shown, hidden=shown.hidden + missing)
+
+
+def _union(boxes: list[Box]) -> Box:
+    return type(boxes[0])(left=min(b.left for b in boxes), top=min(b.top for b in boxes),
+                          right=max(b.right for b in boxes), bottom=max(b.bottom for b in boxes))
 
 
 class FrameBuffer:
