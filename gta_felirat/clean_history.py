@@ -29,6 +29,15 @@ MIN_COVER_RATIO = 0.5  # a sor magasságának és szélességének ekkora rész�
 
 
 @dataclass(frozen=True)
+class FrameRow:
+    """A képkockán talált sor."""
+    box: Box
+    # A sorkereső biztos benne, hogy feliratsor: akkor is takarjuk, ha egyik állapot sem fedi. A bizonytalan
+    # sort (pl. rendszámtábla) csak akkor, ha valamelyik közeli állapot fordította vagy takarta
+    sure: bool = True
+
+
+@dataclass(frozen=True)
 class ShownEntry:
     at: float  # time.monotonic()
     shown: Shown | None
@@ -59,8 +68,8 @@ class ShownHistory:
         first = next((i for i in range(len(entries) - 1, -1, -1) if entries[i].at <= start), 0)
         return [entry for entry in entries[first:] if entry.at <= end]
 
-    def for_frame(self, frame_at: float, until: float, rows: list[Box] | None) -> Shown | None:
-        """A képkockára rajzolandó állapot. rows: a képkockán biztosan megtalált feliratsorok (üres vagy None:
+    def for_frame(self, frame_at: float, until: float, rows: list[FrameRow] | None) -> Shown | None:
+        """A képkockára rajzolandó állapot. rows: a képkockán talált sorok (üres vagy None:
         nem találtunk / nem kerestünk; ilyenkor csak az idő szerint dönthetünk, mint az élő réteg)."""
         entries = self.between(frame_at, until)
         if not rows:
@@ -107,12 +116,16 @@ def _score(entry: ShownEntry, rows: list[Box], source: str, order: int) -> tuple
     return (-missing, entry.source == source, translated, -stray, -order)
 
 
-def pick_shown(entries: list[ShownEntry], rows: list[Box], source: str) -> Shown | None:
-    """Az az állapot, amelyik a képkocka sorait fedi, lehetőleg fordítással; a fedetlen sorokra takarás kerül."""
-    best = max(entries, key=lambda entry: _score(entry, rows, source, entries.index(entry)), default=None)
+def pick_shown(entries: list[ShownEntry], rows: list[FrameRow], source: str) -> Shown | None:
+    """Az az állapot, amelyik a képkocka sorait fedi, lehetőleg fordítással; a fedetlen feliratsorokra
+    takarás kerül."""
+    found = [row.box for row in rows]
+    best = max(entries, key=lambda entry: _score(entry, found, source, entries.index(entry)), default=None)
     shown = best.shown if best is not None else None
     boxes = [] if shown is None else _text_boxes(shown) + list(shown.hidden)
-    missing = tuple(row for row in rows if not is_covered(row, boxes))
+    known = [box for entry in entries for box in _text_boxes(entry.shown) + list(entry.shown.hidden)]
+    missing = tuple(row.box for row in rows
+                    if (row.sure or is_covered(row.box, known)) and not is_covered(row.box, boxes))
     if not missing:
         return shown
     if shown is None:

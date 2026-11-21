@@ -23,7 +23,7 @@ import numpy as np
 
 from .band_capture import fits
 from .band_feed import client_box_in_frame
-from .clean_history import HISTORY_SLACK_SECONDS, FrameBuffer, ShownHistory
+from .clean_history import HISTORY_SLACK_SECONDS, FrameBuffer, FrameRow, ShownHistory
 from .frosted_cover import Backdrop
 from .i18n import t
 from .layer_plan import CoverJob, LayerPlan
@@ -51,7 +51,7 @@ class CapturedFrame:
     image: np.ndarray
     # A képkocka feliratsorai, a rögzítéskor a háttérben keresve (mire a kép sorra kerül, kész);
     # None: megjelenítéskor keressük
-    rows: Future[list[Box] | None] | None = None
+    rows: Future[list[FrameRow] | None] | None = None
 
 
 class CleanOutput:
@@ -143,7 +143,7 @@ class CleanOutput:
         cv2.imshow(title, frame if plan is None else draw_on_frame(frame, plan))
 
 
-def _rows_of(captured: CapturedFrame, config: AppConfig) -> list[Box] | None:
+def _rows_of(captured: CapturedFrame, config: AppConfig) -> list[FrameRow] | None:
     if captured.rows is None:
         return _subtitle_rows(captured.image, config)
     try:
@@ -153,15 +153,15 @@ def _rows_of(captured: CapturedFrame, config: AppConfig) -> list[Box] | None:
         return None  # ilyenkor az idő szerint döntünk, mint az élő réteg
 
 
-def _subtitle_rows(frame: np.ndarray, config: AppConfig) -> list[Box] | None:
-    """A képkockán biztosan megtalált feliratsorok (ugyanaz a sorkereső, mint élőben); None, ha a kép ehhez
+def _subtitle_rows(frame: np.ndarray, config: AppConfig) -> list[FrameRow] | None:
+    """A képkockán talált sorok (ugyanaz a sorkereső, mint élőben); None, ha a kép ehhez
     túl keskeny."""
     height, width = frame.shape[:2]
     if not is_wide_enough(width):
         return None
     area = region_to_box(config.subtitle_region, width, height)
     band = frame[area.top:area.bottom, area.left:area.right]
-    return [row.box for row in find_rows(band, area, (width, height)) if row.sure]
+    return [FrameRow(row.box, row.sure) for row in find_rows(band, area, (width, height))]
 
 
 def _show_title(name: str, title: str) -> None:

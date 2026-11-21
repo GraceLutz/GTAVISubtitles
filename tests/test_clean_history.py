@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from gta_felirat import clean_output
-from gta_felirat.clean_history import FrameBuffer, ShownHistory
+from gta_felirat.clean_history import FrameBuffer, FrameRow, ShownHistory
 from gta_felirat.clean_output import CapturedFrame, CleanOutput, draw_on_frame
 from gta_felirat.config import AppConfig, ConfigError
 from gta_felirat.frosted_cover import Backdrop
@@ -32,32 +32,32 @@ def history_of(*entries):
 def test_frame_gets_the_finished_translation_not_the_cover_shown_at_that_moment():
     history = history_of((10.0, COVER_ONLY, FIRST), (10.5, FIRST_HU, FIRST))
 
-    assert history.for_frame(10.0, 11.0, [LOWER]) == FIRST_HU
+    assert history.for_frame(10.0, 11.0, [FrameRow(LOWER)]) == FIRST_HU
 
 
 def test_frame_before_the_scroll_keeps_the_translation_where_the_line_stood_on_that_frame():
     # A felirat utolsó állapota már a görgetett helyet mutatja: a korábbi képkockán a sor még lent állt
     history = history_of((10.0, FIRST_HU, FIRST), (12.0, FIRST_SCROLLED, FIRST))
 
-    assert history.for_frame(11.5, 12.5, [LOWER]) == FIRST_HU
+    assert history.for_frame(11.5, 12.5, [FrameRow(LOWER)]) == FIRST_HU
 
 
 def test_next_subtitle_in_the_same_place_does_not_replace_the_current_one():
     history = history_of((10.0, FIRST_HU, FIRST), (11.0, SECOND_HU, SECOND))
 
-    assert history.for_frame(10.2, 11.2, [LOWER]) == FIRST_HU
+    assert history.for_frame(10.2, 11.2, [FrameRow(LOWER)]) == FIRST_HU
 
 
 def test_row_that_no_state_covers_gets_a_cover_instead_of_showing_english():
     history = history_of((10.0, FIRST_HU, FIRST))
 
-    shown = history.for_frame(10.0, 11.0, [LOWER, UPPER])
+    shown = history.for_frame(10.0, 11.0, [FrameRow(LOWER), FrameRow(UPPER)])
 
     assert shown.lines == FIRST_HU.lines and UPPER in shown.hidden
 
 
 def test_row_is_covered_even_without_any_recorded_state():
-    shown = ShownHistory(keep_seconds=5.0).for_frame(10.0, 11.0, [UPPER])
+    shown = ShownHistory(keep_seconds=5.0).for_frame(10.0, 11.0, [FrameRow(UPPER)])
 
     assert shown.text == "" and shown.hidden == (UPPER,)
 
@@ -165,7 +165,7 @@ def test_translation_shown_as_one_block_counts_as_covering_its_rows():
     block = Shown("Vágd le, vágd le!", LOWER)
     history = history_of((10.0, COVER_ONLY, FIRST), (10.5, block, FIRST))
 
-    assert history.for_frame(10.0, 11.0, [LOWER]) == block
+    assert history.for_frame(10.0, 11.0, [FrameRow(LOWER)]) == block
 
 
 def test_rows_found_in_the_background_are_covered_even_without_any_state(monkeypatch):
@@ -176,7 +176,7 @@ def test_rows_found_in_the_background_are_covered_even_without_any_state(monkeyp
     english = np.zeros((FRAME_SIZE[1], FRAME_SIZE[0], 3), np.uint8)
     english[UPPER.top:UPPER.bottom, UPPER.left:UPPER.right] = 255
     found = Future()
-    found.set_result([UPPER])
+    found.set_result([FrameRow(UPPER)])
     frames = FrameBuffer(keep_seconds=2.0)
     frames.push(10.0, CapturedFrame(english, found))
 
@@ -184,3 +184,20 @@ def test_rows_found_in_the_background_are_covered_even_without_any_state(monkeyp
 
     assert not np.array_equal(shown_images[0][UPPER.top:UPPER.bottom, UPPER.left:UPPER.right],
                               english[UPPER.top:UPPER.bottom, UPPER.left:UPPER.right])
+
+
+def test_unsure_row_translated_by_a_nearby_state_is_covered():
+    # A sorkereső nem biztos a soron, de közben a pipeline lefordította: feliratsor, nem maradhat angolul
+    history = history_of((10.0, None, ""), (10.6, FIRST_HU, FIRST))
+
+    shown = history.for_frame(10.0, 11.0, [FrameRow(UPPER, sure=True), FrameRow(LOWER, sure=False)])
+
+    assert shown.lines == FIRST_HU.lines
+
+
+def test_unsure_row_that_no_state_knows_is_left_alone():
+    plate = Box(880, 780, 980, 820)  # pl. egy rendszámtábla a sávban
+
+    shown = ShownHistory(keep_seconds=5.0).for_frame(10.0, 11.0, [FrameRow(plate, sure=False)])
+
+    assert shown is None
