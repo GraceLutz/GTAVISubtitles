@@ -224,3 +224,16 @@ def test_white_text_off_the_centre_in_the_objective_strip_is_not_an_objective_ro
     band = band_with_parts([("Lose the cops", WHITE), (" " * 30, WHITE)], OBJECTIVE_BASELINE, thickness=2)
 
     assert ROW_FINDER.detect(band, AREA, FRAME) == []
+
+
+TV_TEXT = 183  # a tévéműsor halvány, szürkésfehér felirata
+DARKENED_SCENE = 25  # a tévéműsor alatt elsötétített kép
+
+
+@pytest.mark.parametrize("level, is_dim", [(TV_TEXT, True), (255, False)], ids=["tv subtitle", "white subtitle"])
+def test_only_the_dim_tv_subtitle_row_is_marked_dim(level, is_dim):
+    band = band_with(("Noah. What is your name?", DIALOGUE_BASELINE, level), background=DARKENED_SCENE)
+
+    rows = find_rows(band, AREA, FRAME)
+
+    assert [row.dim for row in rows] == [is_dim]

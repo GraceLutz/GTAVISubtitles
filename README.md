@@ -188,7 +188,8 @@ blurred, soft-edged version of the game picture, even if you drag the panel else
   faint shadow.
 - **Spoken lines only (“Name: text” lines):** only translates “Name: text” dialogue
   lines; mission text, signs, menus and the phone-call display are not translated (on by
-  default).
+  default). The dim, greyish-white subtitle of TV shows counts as spoken text without a
+  name, so it is translated too.
 - **Streamer mode:** slurs (the n-word, homophobic and other slurs, in Hungarian too) are
   shown starred out, e.g. `n****`. A separate switch, off by default; it only changes the
   drawn text, not the translation, so it can be turned on and off at any time.

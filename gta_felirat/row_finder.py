@@ -118,7 +118,7 @@ def _detected_rows(detection: Detection, band: np.ndarray, area: Box, frame_widt
             whiteness = max(whiteness, _letter_whiteness(band[row.top:row.bottom, row.left:row.right],
                                                          detection.core[row.top:row.bottom, row.left:row.right],
                                                          row.sure))
-        rows.append(DetectedRow(box, (pixels, scale), whiteness, row.sure))
+        rows.append(DetectedRow(box, (pixels, scale), whiteness, row.sure, row.dim))
     return rows
 
 

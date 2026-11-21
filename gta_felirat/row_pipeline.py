@@ -347,7 +347,7 @@ class RowPipeline(SubtitlePipeline):
                      for box, row in legible.items()]
         center = self._frame_center()
         kept = select_subtitle(fragments, center)
-        lines = self._subtitle_lines(kept)
+        lines = self._subtitle_lines(kept, is_tv_text=bool(kept) and all(legible[part.box].dim for part in kept))
         used = list(kept) if lines else []
         is_free_waiting = False
         if self._config.whole_band_text:
@@ -397,14 +397,16 @@ class RowPipeline(SubtitlePipeline):
             return None
         return OcrLine(text, union_box([row.box for row in rows]))
 
-    def _subtitle_lines(self, fragments: list[Fragment], *, must_be_spoken: bool = False) -> tuple[OcrLine, ...]:
+    def _subtitle_lines(self, fragments: list[Fragment], *, must_be_spoken: bool = False,
+                        is_tv_text: bool = False) -> tuple[OcrLine, ...]:
         """A darabok megszólalásokká fűzve, ha a szövegük feliratnak tűnik; különben üres.
 
-        must_be_spoken: csak „Név: szöveg” megszólalás lehet, az only_spoken_lines beállítástól függetlenül."""
+        must_be_spoken: csak „Név: szöveg” megszólalás lehet, az only_spoken_lines beállítástól függetlenül.
+        is_tv_text: a tévéműsor halvány felirata: kimondott szöveg, bár nincs előtte név."""
         lines = spoken_lines([(fragment.text, fragment.box) for fragment in fragments])
         if not lines or not looks_like_subtitle(" ".join(line.text for line in lines)):
             return ()
-        must_be_spoken = must_be_spoken or self._config.only_spoken_lines
+        must_be_spoken = must_be_spoken or (self._config.only_spoken_lines and not is_tv_text)
         if must_be_spoken and not is_spoken_line("\n".join(line.text for line in lines)):
             return ()  # küldetésszöveg, tábla, menü: nem kimondott szöveg, nem fordítjuk
         return lines

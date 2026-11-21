@@ -178,7 +178,8 @@ elmosott, lágy szélű változata takarja, akkor is, ha a panelt máshová húz
 - **Angol felirat eltakarása**, valamint **panel vissza az eredeti helyre**.
 - **Vékony betű (mint a GTA-ban):** a beszélő neve türkiz, a szöveg fehér, halvány árnyékkal.
 - **Csak a kimondott szöveg:** csak a „Név: szöveg” párbeszédsorokat fordítja; küldetésszöveg,
-  tábla, menü, telefonhívás-kijelző nem megy fordításra (alapból bekapcsolva).
+  tábla, menü, telefonhívás-kijelző nem megy fordításra (alapból bekapcsolva). A tévéműsor halvány,
+  szürkésfehér felirata név nélkül is kimondott szövegnek számít, az is lefordul.
 - **Streamer mód:** a sértő szavakat (n-szó, homofób és más gyalázkodás, magyarul is) kicsillagozva
   mutatja, pl. `n****`. Külön kapcsolható, alapból kikapcsolva; a fordítást nem változtatja meg, csak
   a kirajzolt szöveget, így bármikor ki-be kapcsolható.

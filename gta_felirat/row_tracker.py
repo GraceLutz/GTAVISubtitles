@@ -50,6 +50,7 @@ class DetectedRow:
     signature: Any  # átlátszatlan: csak az is_same_row függvény érti
     whiteness: float  # a feliratszínű pixelek aránya a dobozban (fragment_filter.white_fraction)
     sure: bool = True  # a szigorú ellenőrzéseken is átment: olvasás előtt is eltakarható
+    dim: bool = False  # halvány, szürkésfehér betű (a tévéműsor felirata): név nélkül is kimondott szöveg
 
 
 @dataclass(frozen=True)
@@ -74,6 +75,7 @@ class RowObs:
     stable_captures: int  # ennyi rögzítésen látszott már ugyanazokkal a képpontokkal
     sure: bool
     missing: int = 0  # ennyi rögzítés óta nem látszik (türelmi idő); 0: most is a képen van
+    dim: bool = False  # a tévéműsor halvány felirata (DetectedRow.dim)
 
 
 @dataclass(frozen=True, eq=False)  # eq=False: a kép numpy-tömbjének == összehasonlítása hibát dobna
@@ -198,14 +200,15 @@ class RowTracker:
         return matches
 
     def _start(self, row: DetectedRow, orphans: Sequence[_Track], now: float) -> _Track:
-        obs = RowObs(next(self._ids), row.box, row.whiteness, _first_seen(row, orphans, now), 1, row.sure)
+        obs = RowObs(next(self._ids), row.box, row.whiteness, _first_seen(row, orphans, now), 1, row.sure,
+                     dim=row.dim)
         return _Track(obs, row.signature)
 
 
 def _continue(track: _Track, row: DetectedRow) -> _Track:
     """Ugyanaz a sor a mostani rögzítésen: a helye változhatott, a szövege nem."""
     old = track.obs
-    obs = replace(old, box=row.box, whiteness=row.whiteness, sure=old.sure or row.sure,
+    obs = replace(old, box=row.box, whiteness=row.whiteness, sure=old.sure or row.sure, dim=old.dim or row.dim,
                   stable_captures=old.stable_captures + 1, missing=0)
     return _Track(obs, row.signature)
 
