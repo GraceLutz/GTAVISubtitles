@@ -5,6 +5,8 @@ import re
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 
+from .i18n import AUTO, UI_LANGUAGES, t
+
 SUPPORTED_TRANSLATORS = ("auto", "deepl", "claude", "openai", "google")
 DEFAULT_CLAUDE_MODEL = "claude-haiku-5-5"
 DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
@@ -37,9 +39,9 @@ class Region:
     def validate(self) -> None:
         values = (self.left, self.top, self.right, self.bottom)
         if any(v < 0.0 or v > 1.0 for v in values):
-            raise ConfigError("subtitle_region értékei 0.0 és 1.0 között legyenek")
+            raise ConfigError(t("config.region_range"))
         if self.left >= self.right or self.top >= self.bottom:
-            raise ConfigError("subtitle_region: left < right és top < bottom kell")
+            raise ConfigError(t("config.region_order"))
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,12 @@ class AppConfig:
     # A réteg látszik a monitorrögzítésben (Medal, OBS → Kick, Twitch, YouTube)
     visible_in_recordings: bool = True
     only_spoken_lines: bool = True  # csak a „Név: szöveg” párbeszédsorokat fordítja
+    # Remote Play módban a feliratsáv folyamatos rögzítése külön szálon (gyorsabb takarás és olvasás);
+    # false: a régi, olvasásonkénti rögzítés, ha a folyamatos valamiért gondot okozna
+    fast_capture: bool = True
+    # Remote Play módban soronkénti olvasás: csak az új feliratsort olvassuk be (gyorsabb fordítás, kisebb
+    # terhelés); a folyamatos rögzítésre épül. false: mindig a teljes sávot olvassuk
+    row_reading: bool = True
     panel_opacity: int = 245
     subtitle_x: float | None = None  # None: az eredeti felirat helyén
     subtitle_y: float | None = None
@@ -75,66 +83,69 @@ class AppConfig:
     webcam_y: float = 0.02
     webcam_width_ratio: float = 0.2
     webcam_mirror: bool = True
+    ui_language: str = AUTO  # "auto": a Windows nyelve, vagy pl. "hu"
 
     def validate(self) -> None:
         self._validate_webcam()
         self._validate_subtitle_panel()
         self.subtitle_region.validate()
         if self.translator not in SUPPORTED_TRANSLATORS:
-            raise ConfigError(f"translator csak ezek egyike lehet: {SUPPORTED_TRANSLATORS}")
+            raise ConfigError(t("config.translator_choice", choices=SUPPORTED_TRANSLATORS))
         if self.device_index < 0:
-            raise ConfigError("device_index nem lehet negatív")
+            raise ConfigError(t("config.device_negative"))
         if self.stable_reads < 1:
-            raise ConfigError("stable_reads legalább 1 legyen")
+            raise ConfigError(t("config.stable_reads_min"))
         if not 0.0 < self.similarity_threshold <= 1.0:
-            raise ConfigError("similarity_threshold 0 és 1 közé essen")
+            raise ConfigError(t("config.similarity_range"))
         if self.ocr_interval_seconds <= 0 or self.hold_seconds < 0:
-            raise ConfigError("ocr_interval_seconds > 0 és hold_seconds >= 0 kell")
+            raise ConfigError(t("config.timing_range"))
         if not 0.0 <= self.min_text_score <= 1.0:
-            raise ConfigError("min_text_score 0 és 1 közé essen")
+            raise ConfigError(t("config.min_score_range"))
+        if self.ui_language != AUTO and self.ui_language not in UI_LANGUAGES:
+            raise ConfigError(t("config.ui_language_choice", choices=sorted(UI_LANGUAGES)))
 
     def _validate_subtitle_panel(self) -> None:
         if not self.target_lang.strip():
-            raise ConfigError("target_lang nem lehet üres")
+            raise ConfigError(t("config.target_lang_empty"))
         if not MIN_FONT_SIZE_RATIO <= self.font_size_ratio <= MAX_FONT_SIZE_RATIO:
-            raise ConfigError(f"font_size_ratio {MIN_FONT_SIZE_RATIO} és {MAX_FONT_SIZE_RATIO} közé essen")
+            raise ConfigError(t("config.font_size_range", minimum=MIN_FONT_SIZE_RATIO, maximum=MAX_FONT_SIZE_RATIO))
         if not 0 <= self.panel_opacity <= 255:
-            raise ConfigError("panel_opacity 0 és 255 közé essen")
+            raise ConfigError(t("config.opacity_range"))
         if not isinstance(self.speaker_color, str) or not HEX_COLOR_PATTERN.match(self.speaker_color):
-            raise ConfigError('speaker_color "#RRGGBB" alakú szín legyen, pl. "#7ECFD6"')
+            raise ConfigError(t("config.speaker_color_format"))
         if (self.subtitle_x is None) != (self.subtitle_y is None):
-            raise ConfigError("subtitle_x és subtitle_y vagy mindkettő null, vagy mindkettő szám")
+            raise ConfigError(t("config.subtitle_xy_pair"))
         if self.subtitle_x is not None and not (0.0 <= self.subtitle_x <= 1.0 and 0.0 <= self.subtitle_y <= 1.0):
-            raise ConfigError("subtitle_x és subtitle_y 0.0 és 1.0 közé essen")
+            raise ConfigError(t("config.subtitle_xy_range"))
 
     def _validate_webcam(self) -> None:
         if not (0.0 <= self.webcam_x <= 1.0 and 0.0 <= self.webcam_y <= 1.0):
-            raise ConfigError("webcam_x és webcam_y 0.0 és 1.0 közé essen")
+            raise ConfigError(t("config.webcam_xy_range"))
         if not MIN_WEBCAM_WIDTH_RATIO <= self.webcam_width_ratio <= MAX_WEBCAM_WIDTH_RATIO:
-            raise ConfigError(f"webcam_width_ratio {MIN_WEBCAM_WIDTH_RATIO} és "
-                              f"{MAX_WEBCAM_WIDTH_RATIO} közé essen")
+            raise ConfigError(t("config.webcam_width_range", minimum=MIN_WEBCAM_WIDTH_RATIO,
+                                maximum=MAX_WEBCAM_WIDTH_RATIO))
         if self.webcam_device_index is None:
             return
         if self.webcam_device_index < 0:
-            raise ConfigError("webcam_device_index nem lehet negatív")
+            raise ConfigError(t("config.webcam_device_negative"))
         if self.webcam_device_index == self.device_index:
-            raise ConfigError("A webkamera és a capture card sorszáma nem lehet ugyanaz")
+            raise ConfigError(t("config.webcam_same_device"))
 
 
 def config_from_dict(raw: dict) -> AppConfig:
     known = {f.name for f in fields(AppConfig)}
     unknown = set(raw) - known
     if unknown:
-        raise ConfigError(f"Ismeretlen beállítás(ok): {sorted(unknown)}")
+        raise ConfigError(t("config.unknown_settings", names=sorted(unknown)))
     values = dict(raw)
     if "subtitle_region" in values:
         region_raw = values["subtitle_region"]
         if not isinstance(region_raw, dict):
-            raise ConfigError("subtitle_region objektum legyen (left, top, right, bottom)")
+            raise ConfigError(t("config.region_not_object"))
         try:
             values["subtitle_region"] = Region(**region_raw)
         except TypeError as err:
-            raise ConfigError(f"subtitle_region hibás: {err}") from err
+            raise ConfigError(t("config.region_invalid", err=err)) from err
     config = AppConfig(**values)
     config.validate()
     return config
@@ -148,9 +159,9 @@ def load_config(path: Path | None) -> AppConfig:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as err:
-        raise ConfigError(f"{path} nem érvényes JSON: {err}") from err
+        raise ConfigError(t("config.invalid_json", path=path, err=err)) from err
     if not isinstance(raw, dict):
-        raise ConfigError(f"{path} gyökere objektum legyen")
+        raise ConfigError(t("config.root_not_object", path=path))
     return config_from_dict(raw)
 
 
@@ -165,13 +176,13 @@ def save_settings(path: Path, updates: dict) -> None:
     """A megadott kulcsokat beírja a config.json-ba; a többi beállítást nem bántja."""
     unknown = set(updates) - {f.name for f in fields(AppConfig)}
     if unknown:
-        raise ConfigError(f"Ismeretlen beállítás mentése: {sorted(unknown)}")
+        raise ConfigError(t("config.unknown_setting_save", names=sorted(unknown)))
     raw = {}
     if path.exists():
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as err:
-            raise ConfigError(f"{path} nem érvényes JSON, nem mentem felül: {err}") from err
+            raise ConfigError(t("config.invalid_json_not_saved", path=path, err=err)) from err
     rounded = {k: round(v, 4) if isinstance(v, float) else v for k, v in updates.items()}
     temp_path = path.with_suffix(".tmp")
     content = json.dumps({**raw, **rounded}, indent=2, ensure_ascii=False) + "\n"

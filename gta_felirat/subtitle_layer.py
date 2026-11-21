@@ -3,27 +3,28 @@
 - Bal gombbal húzva a panel oda kerül, ahová teszed (mentődik).
 - Görgővel a panel fölött nő vagy csökken a betűméret.
 - Jobb gombbal visszaugrik az eredeti angol felirat helyére.
+
+Hogy mit és hová kell rajzolni, azt a layer_plan dönti el; itt a terv lebegőpontos kirajzolása
+van (capture card képkockára), a gyors, helyben rajzoló változat a layer_compositor.
 """
 
-from dataclasses import dataclass
 from typing import Callable
 
 import cv2
 import numpy as np
 
+from .compositing import paste
 from .config import MAX_FONT_SIZE_RATIO, MIN_FONT_SIZE_RATIO, AppConfig
-from .frosted_cover import Backdrop, cover_area, frosted_patch
+from .frosted_cover import Backdrop, frosted_layer
+from .i18n import t
+from .layer_plan import BoxJob, CoverJob, LayerPlan, LayerView, Shown, ShownLine, make_plan
 from .ocr import Box
-from .overlay import (MAX_TEXT_WIDTH_RATIO, beside_original_position, blend, centered_position, cover_box,
-                      hex_to_rgb, render_subtitle, subtitle_position)
+from .overlay import blend, cover_box
+
+__all__ = ["Shown", "ShownLine", "SubtitleLayer", "draw_plan", "wheel_delta"]
 
 FONT_STEP = 0.002
-MIN_FONT_PX = 12
-PREVIEW_TEXT = "Feliratpanel – húzd egérrel, görgővel méretezd, jobb klikk: eredeti hely"
-DRAG_OUTLINE_COLOR = (0, 200, 255)
-ORIGINAL_COVER_OPACITY = 255
-MIN_COVER_FEATHER_PX = 8  # a takarás lágy szélének szélessége legalább ennyi
-COVER_PADDING_PX = 4  # a lágy szél a betűkön kívül kezdődjön
+DRAG_OUTLINE_COLOR = (0, 200, 255, 255)  # BGR(A): az átlátszó rétegen is látszódjon
 
 
 def wheel_delta(flags: int) -> int:
@@ -32,10 +33,36 @@ def wheel_delta(flags: int) -> int:
     return delta - 0x10000 if delta >= 0x8000 else delta
 
 
-@dataclass(frozen=True)
-class Shown:
-    text: str
-    anchor: Box  # az eredeti angol felirat helye
+def draw_plan(frame: np.ndarray, plan: LayerPlan, backdrop: Backdrop | None) -> np.ndarray:
+    """A terv kirajzolása lebegőpontos keveréssel; új képet ad vissza, a frame-et nem módosítja."""
+    output = frame
+    for job in plan.covers:
+        output = _draw_cover(output, job, plan.cover_strength, backdrop)
+    if plan.panel is not None and plan.panel.opacity > 0:  # az átlátszó panel semmit sem változtat
+        output = cover_box(output, plan.panel.box, plan.panel.opacity)
+    for job in plan.texts:
+        output = blend(output, job.rendered, job.x, job.y)
+    outline = plan.outline
+    if outline is not None:
+        output = output.copy() if output is frame else output
+        cv2.rectangle(output, (outline.left, outline.top), (outline.right - 1, outline.bottom - 1),
+                      DRAG_OUTLINE_COLOR, 2)
+    return output
+
+
+def _draw_cover(frame: np.ndarray, job: CoverJob | BoxJob, strength: float,
+                backdrop: Backdrop | None) -> np.ndarray:
+    if isinstance(job, BoxJob):
+        return cover_box(frame, job.box, job.opacity)
+    if backdrop is None:
+        return frame  # a terv játékképpel készült, de az közben elveszett: nincs mivel takarni
+    area = job.area
+    offset_x, offset_y = area.left - backdrop.area.left, area.top - backdrop.area.top
+    source = backdrop.image[offset_y:offset_y + area.height, offset_x:offset_x + area.width]
+    # Átlátszó panelnél a takarás is átlátszó: csak az angol betűk tűnnek el
+    frosted, weight = frosted_layer(source, job.feather, strength)
+    # Képkockán a széle az éles képbe, átlátszó rétegen az élő játékképbe olvad
+    return paste(frame, area.top, area.left, frosted, weight)
 
 
 class SubtitleLayer:
@@ -65,77 +92,30 @@ class SubtitleLayer:
     def is_dragging(self) -> bool:
         return self._grab_offset is not None
 
-    def draw(self, frame: np.ndarray, shown: Shown | None, hide_original: bool,
-             preview_anchor: Box | None = None, backdrop: Backdrop | None = None) -> np.ndarray:
-        """preview_anchor: ha nincs felirat, mintaszöveg mutatja a panel helyét.
+    def plan(self, frame_size: tuple[int, int], shown: Shown | None, hide_original: bool,
+             preview_anchor: Box | None = None, backdrop: Backdrop | None = None) -> LayerPlan | None:
+        """Mit kell kirajzolni és hová; megjegyzi a panel és a takarás helyét (egér, saját szöveg).
 
-        backdrop: a takarás nélküli játékkép; ha megvan, az angolt elmosott „matt üveg” takarja.
+        preview_anchor: ha nincs felirat, mintaszöveg mutatja a panel helyét.
+        backdrop: a takarás nélküli játékkép; ha megvan, az angol betűket ennek elmosott mása takarja.
         """
-        height, width = frame.shape[:2]
-        self._frame_size = (width, height)
-        self._last_cover = None
+        width, height = frame_size
+        self._frame_size = frame_size
         is_preview = shown is None and preview_anchor is not None
         if is_preview:
-            shown = Shown(PREVIEW_TEXT, preview_anchor)
-        if shown is None:
-            self._last_rect = None
-            return frame
-        if hide_original and not is_preview:
-            # Az angol szöveget teljesen takarjuk, akármilyen átlátszó a magyar panel
-            frame = self._cover_original(frame, shown.anchor, backdrop)
-        font_size = max(MIN_FONT_PX, int(height * self._config.font_size_ratio))
-        center = self._custom_center(width, height)
-        if center is None:
-            return self._draw_at_original(frame, shown, hide_original, font_size)
-        output = frame
-        rendered = render_subtitle(shown.text, self._config.font_path, font_size,
-                                   int(width * MAX_TEXT_WIDTH_RATIO), (0, 0), self._config.panel_opacity,
-                                   hex_to_rgb(self._config.speaker_color))
-        x, y = centered_position(rendered, center[0], center[1], width, height)
-        return self._finish(output, rendered, x, y)
+            shown = Shown(t("layer.preview_text"), preview_anchor)
+        view = LayerView(width, height, hide_original, backdrop.area if backdrop is not None else None,
+                         self._custom_center(width, height), self.is_dragging, is_preview)
+        plan = make_plan(self._config, view, shown)
+        self._last_rect = plan.last_rect if plan is not None else None
+        self._last_cover = plan.last_cover if plan is not None else None
+        return plan
 
-    def _cover_original(self, frame: np.ndarray, anchor: Box, backdrop: Backdrop | None) -> np.ndarray:
-        if backdrop is not None:
-            height, width = frame.shape[:2]
-            # Átméretezés után a korábbi sáv kilóghat a képből: csak a közös részt takarjuk
-            limits = Box(max(backdrop.area.left, 0), max(backdrop.area.top, 0),
-                         min(backdrop.area.right, width), min(backdrop.area.bottom, height))
-            feather = max(MIN_COVER_FEATHER_PX, anchor.height // 2)
-            area = cover_area(anchor, feather + COVER_PADDING_PX, limits)
-            if area.width > 0 and area.height > 0:
-                offset_x, offset_y = area.left - backdrop.area.left, area.top - backdrop.area.top
-                source = backdrop.image[offset_y:offset_y + area.height, offset_x:offset_x + area.width]
-                output = frame.copy()
-                output[area.top:area.bottom, area.left:area.right] = frosted_patch(source, feather)
-                self._last_cover = area
-                return output
-        self._last_cover = anchor
-        return cover_box(frame, anchor, ORIGINAL_COVER_OPACITY)
-
-    def _draw_at_original(self, frame: np.ndarray, shown: Shown, hide_original: bool,
-                          font_size: int) -> np.ndarray:
-        height, width = frame.shape[:2]
-        anchor = shown.anchor
-        if hide_original:
-            min_panel = (anchor.width + font_size, anchor.height + font_size // 2)
-        else:
-            min_panel = (0, 0)
-        rendered = render_subtitle(shown.text, self._config.font_path, font_size,
-                                   int(width * MAX_TEXT_WIDTH_RATIO), min_panel, self._config.panel_opacity,
-                                   hex_to_rgb(self._config.speaker_color))
-        if hide_original:
-            x, y = subtitle_position(rendered, anchor, width, height)
-        else:
-            x, y = beside_original_position(rendered, anchor, width, height, gap=font_size // 2)
-        return self._finish(frame, rendered, x, y)
-
-    def _finish(self, frame: np.ndarray, rendered, x: int, y: int) -> np.ndarray:
-        self._last_rect = (x, y, rendered.width, rendered.height)
-        output = blend(frame, rendered, x, y)
-        if self.is_dragging:
-            cv2.rectangle(output, (x, y), (x + rendered.width - 1, y + rendered.height - 1),
-                          DRAG_OUTLINE_COLOR, 2)
-        return output
+    def draw(self, frame: np.ndarray, shown: Shown | None, hide_original: bool,
+             preview_anchor: Box | None = None, backdrop: Backdrop | None = None) -> np.ndarray:
+        """A réteg egy képkockán (capture card mód): új képet ad vissza; ha nincs mit rajzolni, a frame-et."""
+        plan = self.plan((frame.shape[1], frame.shape[0]), shown, hide_original, preview_anchor, backdrop)
+        return frame if plan is None else draw_plan(frame, plan, backdrop)
 
     def _custom_center(self, width: int, height: int) -> tuple[int, int] | None:
         if self._drag_center is not None:

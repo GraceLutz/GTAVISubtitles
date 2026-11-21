@@ -1,0 +1,281 @@
+"""Klasszikus (nem neurális) feliratsor-kereső: csak OpenCV és numpy, sávonként ~1–3 ms.
+
+    detection = detect(band, band_left, frame_width)   # Detection(rows, core, level)
+    rows = detect_rows(band, band_left, frame_width)    # csak a sorok, fentről lefelé
+
+A GTA felirata fehér betű vékony fekete körvonallal, és minden sora a kép közepére igazított:
+1. betűmag-maszk: a pixel „fehér” (mindhárom csatornája eléri a szintet), vékony alakzat része
+   (eltűnik, ha egy betűvonalnál nagyobb négyzettel „kinyitjuk”: a fehér póló, az ég, a napos talaj
+   így a szélével együtt eltűnik), és néhány pixelen belül sötét (körvonal) pixel van mellette;
+2. a maszkot előbb csak a kép közepe körüli keskeny ablakban számoljuk ki: sorjelölt nélkül a sáv
+   többi részéhez hozzá sem nyúlunk, jelölttel pedig csak az általa elérhető sorokon készül el
+   a teljes szélességű maszk;
+3. a jelöltekből a row_geometry méri ki a sorokat, és dönt róluk (sor-e, és biztosan az-e).
+Előbb a fehér szöveget keressük; a tévéműsor halvány, szürke feliratát (a legvilágosabb pixelekhez
+igazított szinttel, mint a frosted_cover._text_level) csak akkor, ha nincs biztos fehér sor.
+
+A küldetésutasítás („Find Dunk”) ugyanilyen betű, de a párbeszédsorok alatt, külön sorban áll; nem
+takarjuk és nem fordítjuk, ezért a dialogue_bottom alatti közepű sort a kereső nem adja vissza.
+
+A küszöbök 1920 képpont széles képen mért értékek, más szélességnél arányosan nőnek. Kisebb ablakban
+(kb. 1600 képpont alatt) a kicsinyített videón a betűk halványabbak, és a kereső sorokat hagyhat ki.
+
+A detect tiszta függvény: bármelyik szálról hívható, az eredménye nem módosítható. Az OpenCV saját
+szálai ilyen kis műveleteknél csak a processzort égetik (mérve: ~6× processzoridő, és lassabb is):
+a programnak induláskor érdemes cv2.setNumThreads(1)-et hívnia.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
+from functools import lru_cache
+
+import cv2
+import numpy as np
+
+from .row_geometry import Row, Span, find_rows, seed_parts
+
+__all__ = ["DEFAULT_PARAMS", "NOTHING", "REFERENCE_WIDTH", "Detection", "Params", "Row", "detect", "detect_rows",
+           "to_frame"]
+
+REFERENCE_WIDTH = 1920.0  # a mért pixelméretek ekkora képszélességre szólnak
+BGR_CHANNELS = 3  # a negyedik (alfa) csatornát nem nézzük: a BGRA kép (GetDIBits, mss) is jó
+MAX_LEVEL = 255
+MIN_STROKE_PX = 3  # kis képen se legyen a „vékony alakzat” határa ennél kisebb: a betűvonal ott is 1–2 px
+# A halvány szintet a sáv minden nyolcadik pixeléből becsüljük: vízszintesen 4, függőlegesen 2 a lépés
+LEVEL_SAMPLE_STEP_X = 4
+LEVEL_SAMPLE_STEP_Y = 2
+KERNEL_CACHE_SIZE = 16  # képszélességenként két szerkesztőelem kell; az ablak mérete ritkán változik
+
+
+@dataclass(frozen=True)
+class Params:
+    """A kereső mért küszöbei; a pixelben megadott méretek 1920 széles képre szólnak."""
+
+    white_level: int = 200  # a betű magja: mindhárom csatorna legalább ennyi (frosted_cover.TEXT_LEVEL)
+    outline_level: int = 150  # körvonal vagy sötét háttér: mindhárom csatorna legfeljebb ennyi (OUTLINE_LEVEL)
+    outline_reach: float = 4.0  # ... és ilyen közel van a maghoz (OUTLINE_REACH_PX)
+    stroke_max: float = 8.0  # az ennél nagyobb négyzetet tartalmazó világos folt nem betű (póló, ég, napos talaj)
+    # A tévéműsor halvány, szürkésfehér felirata (~183, elsötétített képen): csak ha nincs biztos fehér sor
+    dim_level: int = 150
+    dim_margin: int = 25  # a halvány szint ennyivel van a legvilágosabb pixelek alatt
+    dim_top_fraction: float = 0.005  # „legvilágosabb”: a sáv pixeleinek felső 0,5%-a (99,5. percentilis)
+    dim_grey_spread: int = 40  # a halvány betű szürke: a színcsatornái legfeljebb ennyire térnek el
+    dim_min_grey_share: float = 0.7  # a halvány sor magpixeleinek legalább ekkora része szürke
+    dim_outline_level: int = 90  # a halvány betű csak igazán sötét pixel mellett számít
+    # Sorkeresés
+    center_half: float = 110.0  # a kép közepe körüli ablak félszélessége: a sorjelölteket ebben keressük
+    seed_min_pixels: int = 2  # az ablak egy sora ennyi magpixeltől „festett”
+    seed_max_hole: float = 2.0  # ennyi üres sor még belefér egy sorjelöltbe
+    seed_min_height: float = 9.0  # a betűtípus x-magassága ~12 px
+    max_gap: float = 18.0  # soron belül ekkora vízszintes rést zárunk (a legnagyobb mért szóköz 13 px)
+    row_max_height: float = 32.0  # a valódi sor festett magassága 16–28 px; a magasabb jelöltet kettévágjuk
+    row_min_height: float = 13.0
+    row_min_width: float = 26.0
+    trim_slack: float = 6.0  # a sor végének tükörképétől ennyire keresünk rést, ahol a ráragadt folt levágható
+    # Elfogadás (laza): érdemes-e a sort odaadni a szövegolvasónak
+    accept_offset: float = 45.0  # |sorközép − képközép|: a valódi sor ±2 px-en belül van, ha nem ragadt rá semmi
+    min_fill: float = 0.07  # magpixel / festett doboz: valódi sor 0,09–0,21 (fehér pólón 0,28)
+    max_fill: float = 0.30
+    min_stroke_density: float = 0.062  # keresztezett vonások a szélesség egy pixelére: valódi sor 0,073–0,15
+    max_run: float = 3.2  # a magpixelek átlagos vízszintes futáshossza = vonalvastagság: valódi sor 1,55–2,7 px
+    # Bizonyosság (szigorú): olvasás nélkül, első látásra eltakarható
+    sure_offset: float = 3.0
+    sure_min_width: float = 34.0  # a legkeskenyebb mért valódi sor 35 px („No.”)
+    sure_min_height: float = 15.0  # valódi sor: 16 (fel- és lenyúló szár nélkül) – 28
+    sure_max_height: float = 29.0
+    sure_min_fill: float = 0.085
+    sure_max_fill: float = 0.22
+    sure_min_stroke_density: float = 0.08
+    sure_max_run: float = 2.5
+    # A doboz ennyivel nagyobb a festett résznél: így hasonlít a neurális kereső (kitömött) dobozaira
+    pad_left: float = 7.0
+    pad_right: float = 5.0
+    pad_top: float = 8.0
+    pad_bottom: float = 5.0
+
+
+DEFAULT_PARAMS = Params()
+
+
+@dataclass(frozen=True)
+class Measures:
+    """A küszöbök egy adott képre és sávra vonatkoztatva."""
+
+    params: Params
+    scale: float  # képszélesség / REFERENCE_WIDTH
+    center: float  # a kép vízszintes közepe a sáv koordinátáiban
+    window: Span  # a középső ablak oszlopai
+    dialogue_bottom: float | None  # az ennél lejjebb (nagyobb y) lévő közepű sor a küldetésutasítás
+
+    def px(self, size: float, minimum: int = 1) -> int:
+        """Az 1920 széles képre mért méret ezen a képen, egész pixelben."""
+        return _px(size, self.scale, minimum)
+
+
+@dataclass(frozen=True, eq=False)  # eq=False: a numpy maszkok == összehasonlítása hibát dobna
+class Detection:
+    """A kereső eredménye egy sávra."""
+
+    rows: tuple[Row, ...]  # fentről lefelé
+    core: np.ndarray | None  # a betűmag-maszk, amelyen a sorokat találtuk (uint8, 0/255, csak olvasható)
+    level: int  # a betűmag szintje: white_level, halvány szövegnél alacsonyabb
+
+
+NOTHING = Detection((), None, 0)  # nincs sor: maszk sem készült
+
+
+@dataclass(frozen=True)
+class _Tone:
+    """Egy menet betűszíne."""
+
+    level: int  # a betű magja: mindhárom csatorna legalább ennyi
+    outline_level: int  # a közelében legfeljebb ilyen világos pixel kell
+    dim: bool  # a halvány (tévéműsor-felirat) menet
+
+
+def detect(band_bgr: np.ndarray, band_left: int, frame_width: float, params: Params = DEFAULT_PARAMS, *,
+           dialogue_bottom: float | None = None) -> Detection:
+    """A sáv feliratsorai fentről lefelé, és a betűmag-maszk, amelyen találtuk őket.
+
+    band_bgr: a feliratsáv (BGR vagy BGRA, uint8); band_left: a sáv bal széle a teljes képen;
+    frame_width: a teljes kép szélessége. dialogue_bottom: a párbeszédsorok alsó határa a sáv
+    koordinátáiban (ocr.frame_center(...).dialogue_bottom mínusz a sáv teteje); None: nincs határ.
+    """
+    if band_bgr.ndim != 3 or band_bgr.shape[2] not in (BGR_CHANNELS, BGR_CHANNELS + 1) or band_bgr.dtype != np.uint8:
+        raise ValueError(f"band must be an 8-bit BGR or BGRA image, got shape {band_bgr.shape}, {band_bgr.dtype}")
+    if frame_width <= 0:
+        raise ValueError(f"frame_width must be positive, got {frame_width}")
+    if band_bgr.size == 0:
+        return NOTHING
+    measures = _measures(params, band_bgr.shape[1], frame_width / 2.0 - band_left, frame_width, dialogue_bottom)
+    white = _scan(band_bgr, _Tone(params.white_level, params.outline_level, dim=False), measures)
+    if any(row.sure for row in white.rows):
+        return white
+    # Nincs biztos fehér sor: halvány szöveget is keresünk (fehér folt ne takarhassa el a tévéfeliratot)
+    level = _text_level(band_bgr, params)
+    if level >= params.white_level:
+        return white  # világos jelenet: a fehér menet már mindent megnézett
+    dim = _scan(band_bgr, _Tone(level, params.dim_outline_level, dim=True), measures)
+    return dim if dim.rows and (not white.rows or any(row.sure for row in dim.rows)) else white
+
+
+def detect_rows(band_bgr: np.ndarray, band_left: int, frame_width: float, params: Params = DEFAULT_PARAMS, *,
+                dialogue_bottom: float | None = None) -> tuple[Row, ...]:
+    """Csak a sorok: detect(...).rows."""
+    return detect(band_bgr, band_left, frame_width, params, dialogue_bottom=dialogue_bottom).rows
+
+
+def to_frame(row: Row, band_left: int, band_top: int) -> Row:
+    """Ugyanaz a sor a teljes kép koordinátáiban; band_left, band_top: a sáv bal felső sarka a képen."""
+    return replace(row, left=row.left + band_left, right=row.right + band_left, top=row.top + band_top,
+                   bottom=row.bottom + band_top, ink_left=row.ink_left + band_left,
+                   ink_right=row.ink_right + band_left, ink_top=row.ink_top + band_top,
+                   ink_bottom=row.ink_bottom + band_top)
+
+
+def _px(size: float, scale: float, minimum: int = 1) -> int:
+    return max(minimum, int(round(size * scale)))
+
+
+def _measures(params: Params, band_width: int, center: float, frame_width: float,
+              dialogue_bottom: float | None) -> Measures:
+    scale = frame_width / REFERENCE_WIDTH
+    half = _px(params.center_half, scale)
+    window = (max(0, int(center) - half), min(band_width, int(center) + half))
+    return Measures(params, scale, center, window, dialogue_bottom)
+
+
+def _scan(band: np.ndarray, tone: _Tone, measures: Measures) -> Detection:
+    """Egy menet: sorjelöltek a középső ablakból, majd sorok a jelöltek környékének teljes szélességű maszkjából."""
+    parts = _central_parts(band, tone, measures)
+    if not parts:
+        return NOTHING
+    core = _strip_mask(band, parts, tone, measures)
+    rows = find_rows(core, parts, measures, tone.dim)
+    if tone.dim:
+        params = measures.params
+        rows = tuple(row for row in rows
+                     if _grey_share(band, core, row, params.dim_grey_spread) >= params.dim_min_grey_share)
+    return Detection(rows, core, tone.level) if rows else NOTHING
+
+
+def _central_parts(band: np.ndarray, tone: _Tone, measures: Measures) -> list[Span]:
+    """Olcsó kapu: sorjelöltek csak a középső ablak maszkjából (a morfológiához kellő margóval kivágva)."""
+    left, right = measures.window
+    if right <= left:
+        return []
+    margin = _margin(measures)
+    crop_left, crop_right = max(0, left - margin), min(band.shape[1], right + margin)
+    core = _core_mask(band[:, crop_left:crop_right], tone, measures)
+    return seed_parts(core[:, left - crop_left:right - crop_left], measures)
+
+
+def _strip_mask(band: np.ndarray, parts: list[Span], tone: _Tone, measures: Measures) -> np.ndarray:
+    """Teljes szélességű betűmag-maszk, csak a jelöltek által elérhető sorokon kiszámolva (máshol 0)."""
+    height = band.shape[0]
+    margin = _margin(measures)
+    reach = measures.px(measures.params.row_max_height) + margin
+    top, bottom = max(0, parts[0][0] - reach), min(height, parts[-1][1] + reach)
+    core = np.zeros(band.shape[:2], np.uint8)
+    core[top:bottom] = _core_mask(band[top:bottom], tone, measures)
+    if top > 0:  # a mesterséges vágásszél melletti sorok nem pontosak: ott semmit se találjunk
+        core[top:top + margin] = 0
+    if bottom < height:
+        core[bottom - margin:bottom] = 0
+    core.setflags(write=False)
+    return core
+
+
+def _core_mask(image: np.ndarray, tone: _Tone, measures: Measures) -> np.ndarray:
+    """255 a betűk magján: vékony világos alakzat, amelyhez közel sötét pixel van (csatornabontás nélkül)."""
+    alpha = image.shape[2] - BGR_CHANNELS
+    white = cv2.inRange(image, (tone.level,) * BGR_CHANNELS + (0,) * alpha, (MAX_LEVEL,) * image.shape[2])
+    dark = cv2.inRange(image, (0,) * image.shape[2], (tone.outline_level,) * BGR_CHANNELS + (MAX_LEVEL,) * alpha)
+    thin = cv2.subtract(white, cv2.morphologyEx(white, cv2.MORPH_OPEN, _square(_stroke_px(measures) + 1)))
+    return cv2.bitwise_and(thin, cv2.dilate(dark, _square(2 * _reach_px(measures) + 1)))
+
+
+def _stroke_px(measures: Measures) -> int:
+    return measures.px(measures.params.stroke_max, MIN_STROKE_PX)
+
+
+def _reach_px(measures: Measures) -> int:
+    return measures.px(measures.params.outline_reach)
+
+
+def _margin(measures: Measures) -> int:
+    """Mesterséges vágásszéltől ennyi soron/oszlopon belül a maszk eltérhet a teljes sáv maszkjától."""
+    return _stroke_px(measures) + _reach_px(measures) + 1
+
+
+@lru_cache(maxsize=KERNEL_CACHE_SIZE)
+def _square(side: int) -> np.ndarray:
+    """Négyzet alakú szerkesztőelem (közös, gyorsítótárazott példány: csak olvasható)."""
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (side, side))
+    kernel.setflags(write=False)
+    return kernel
+
+
+def _text_level(band: np.ndarray, params: Params) -> int:
+    """A betűmag szintje halvány feliratnál: a sáv legvilágosabb pixelei alatt (frosted_cover._text_level)."""
+    height, width = band.shape[:2]
+    size = (max(1, width // LEVEL_SAMPLE_STEP_X), max(1, height // LEVEL_SAMPLE_STEP_Y))
+    blue, green, red = cv2.split(cv2.resize(band, size, interpolation=cv2.INTER_NEAREST))[:BGR_CHANNELS]
+    darkest = cv2.min(cv2.min(blue, green), red)
+    histogram = cv2.calcHist([darkest], [0], None, [MAX_LEVEL + 1], [0, MAX_LEVEL + 1]).ravel()
+    at_least = np.cumsum(histogram[::-1])  # ennyi pixel értéke legalább 255, 254, ...
+    top = MAX_LEVEL - int(np.searchsorted(at_least, darkest.size * params.dim_top_fraction, side="left"))
+    return int(min(params.white_level, max(params.dim_level, top - params.dim_margin)))
+
+
+def _grey_share(band: np.ndarray, core: np.ndarray, row: Row, spread: int) -> float:
+    """A sor magpixeleinek mekkora része szürke vagy fehér (közel egyforma színcsatornák), nem színes fény."""
+    crop = band[row.ink_top:row.ink_bottom, row.ink_left:row.ink_right]
+    blue, green, red = cv2.split(crop)[:BGR_CHANNELS]
+    brightest = cv2.max(cv2.max(blue, green), red)
+    darkest = cv2.min(cv2.min(blue, green), red)
+    _, grey = cv2.threshold(cv2.subtract(brightest, darkest), spread, MAX_LEVEL, cv2.THRESH_BINARY_INV)
+    mask = core[row.ink_top:row.ink_bottom, row.ink_left:row.ink_right]
+    total = cv2.countNonZero(mask)
+    return cv2.countNonZero(cv2.bitwise_and(mask, grey)) / float(total) if total else 0.0

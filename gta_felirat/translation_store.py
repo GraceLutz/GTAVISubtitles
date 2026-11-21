@@ -9,7 +9,10 @@ import logging
 import os
 import threading
 from collections import OrderedDict
+from collections.abc import Mapping
 from pathlib import Path
+
+from .i18n import t
 
 FILE_VERSION = 1
 MAX_ENTRIES_PER_NAMESPACE = 5000
@@ -21,7 +24,8 @@ class TranslationStore:
     def __init__(self, path: Path, max_entries: int = MAX_ENTRIES_PER_NAMESPACE) -> None:
         self._path = path
         self._max_entries = max_entries
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()  # a memóriában tartott bejegyzéseké: az olvasó (get) csak erre vár
+        self._write_lock = threading.Lock()  # a fájlírásé: két szál írása ne keveredjen össze
         self._entries: dict[str, OrderedDict[str, str]] = self._load()
 
     def _load(self) -> dict[str, OrderedDict[str, str]]:
@@ -35,7 +39,7 @@ class TranslationStore:
                 for name, entries in namespaces.items()
             }
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as err:
-            logger.warning("A mentett fordítások nem olvashatók, üresen kezdem: %s", err)
+            logger.warning(t("store.load_failed", err=err))
             return {}
 
     def get(self, namespace: str, key: str) -> str | None:
@@ -43,17 +47,34 @@ class TranslationStore:
             return self._entries.get(namespace, {}).get(key)
 
     def put(self, namespace: str, key: str, value: str) -> None:
+        self.put_many(namespace, {key: value})
+
+    def put_many(self, namespace: str, items: Mapping[str, str]) -> None:
+        """Több új fordítás egyetlen fájlírással (egy kérésben több sor is jöhet).
+
+        A memóriában azonnal látszanak; a lassabb fájlírás alatt az olvasók (get) nem várnak.
+        """
+        if not items:
+            return
         with self._lock:
             entries = self._entries.setdefault(namespace, OrderedDict())
-            entries[key] = value
-            entries.move_to_end(key)
+            for key, value in items.items():
+                entries[key] = value
+                entries.move_to_end(key)
             while len(entries) > self._max_entries:
                 entries.popitem(last=False)
-            snapshot = {name: dict(items) for name, items in self._entries.items()}
+        self._save()
+
+    def _save(self) -> None:
+        # Az írások sorban mennek, és mindegyik a pillanatnyi teljes állapotot menti:
+        # így a fájlba mindig a legfrissebb kerül, akármilyen sorrendben érnek ide a szálak
+        with self._write_lock:
+            with self._lock:
+                snapshot = {name: dict(entries) for name, entries in self._entries.items()}
             try:
                 self._write(snapshot)
-            except OSError as err:
-                logger.warning("A fordítást nem sikerült lemezre menteni: %s", err)
+            except (OSError, ValueError) as err:  # ValueError: nem menthető szöveg (pl. magányos surrogate)
+                logger.warning(t("store.save_failed", err=err))
 
     def _write(self, snapshot: dict[str, dict[str, str]]) -> None:
         temp = self._path.with_suffix(self._path.suffix + ".tmp")

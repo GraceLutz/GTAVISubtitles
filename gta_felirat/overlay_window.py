@@ -1,7 +1,7 @@
 """Átlátszó, mindig felül lévő feliratréteg egy másik ablak (pl. PS Remote Play) fölött.
 
-- A kulcsszínnel kitöltött részek teljesen átlátszók, és a kattintás is átmegy
-  rajtuk, így a Remote Play kapja meg az egeret.
+- Pixelenként átlátszó (UpdateLayeredWindow): ahol nincs semmi, ott a kattintás is átmegy
+  a Remote Playre; az angol felirat takarásának széle lágyan beleolvad az élő játékképbe.
 - Maga a feliratpanel megfogható: húzható, görgethető, jobb klikkel visszaáll.
 - WS_EX_NOACTIVATE: a panelre kattintás nem veszi el a fókuszt a Remote Playtől.
 - Alapból a réteg látszik a képrögzítésben (Medal, OBS); az OCR a saját fordításunk
@@ -12,24 +12,26 @@
 import ctypes
 import logging
 import tkinter as tk
+from ctypes import wintypes
 
 import cv2
-import numpy as np
-from PIL import Image, ImageTk
 
 from .frosted_cover import Backdrop
+from .i18n import t
+from .layer_compositor import LayerCompositor
+from .layer_plan import Shown
+from .layered_surface import LayeredSurface
 from .ocr import Box
-from .subtitle_layer import Shown, SubtitleLayer
+from .subtitle_layer import SubtitleLayer
 from .window_capture import ScreenRect
 
-KEY_COLOR_RGB = (1, 2, 3)  # majdnem fekete: a betűk élsimítása sem ad színes szegélyt
-KEY_COLOR_HEX = "#010203"
-KEY_COLOR_BGR = KEY_COLOR_RGB[::-1]
-REGION_COLOR = (0, 200, 255)
-OUTLINE_PX = 2
 GWL_EXSTYLE = -20
 WS_EX_TOOLWINDOW = 0x00000080
 WS_EX_NOACTIVATE = 0x08000000
+HWND_TOPMOST = -1
+SWP_NOSIZE = 0x0001
+SWP_NOMOVE = 0x0002
+SWP_NOACTIVATE = 0x0010
 WDA_NONE = 0x00000000
 WDA_EXCLUDEFROMCAPTURE = 0x00000011
 WHEEL_SHIFT = 16
@@ -37,54 +39,52 @@ WHEEL_SHIFT = 16
 logger = logging.getLogger(__name__)
 
 
-def protect_from_key(frame: np.ndarray, box: Box) -> np.ndarray:
-    """A takarásban a véletlenül kulcsszínű pixelek feketék lesznek, hogy ne lásson át rajtuk az angol szöveg."""
-    region = frame[box.top:box.bottom, box.left:box.right]
-    is_key = cv2.inRange(region, KEY_COLOR_BGR, KEY_COLOR_BGR)  # gyors, ~25× a numpy-összehasonlításnál
-    if not cv2.countNonZero(is_key):
-        return frame
-    result = frame.copy()
-    result[box.top:box.bottom, box.left:box.right][is_key > 0] = 0
-    return result
-
-
 class OverlayWindow:
     def __init__(self, root: tk.Tk, layer: SubtitleLayer, capture_visible: bool = True) -> None:
         self._layer = layer
         self._capture_visible = capture_visible
         self._rect: ScreenRect | None = None
-        self._base: np.ndarray | None = None
-        self._photo: ImageTk.PhotoImage | None = None
+        self._surface: LayeredSurface | None = None
+        self._compositor = LayerCompositor()  # helyben rajzol az ablak képpontjaiba
+        self._surface_is_new = True  # méretváltás után az első kirakás a teljes felület
         self._visible = False
         self.needs_redraw = True
         self._window = tk.Toplevel(root)
         self._window.overrideredirect(True)
-        self._window.configure(bg=KEY_COLOR_HEX)
         self._window.attributes("-topmost", True)
-        self._window.attributes("-transparentcolor", KEY_COLOR_HEX)
-        # Vászon kulcsszínnel: csak a megváltozott sáv képét frissítjük, nem az egész ablakot
-        self._canvas = tk.Canvas(self._window, bd=0, highlightthickness=0, bg=KEY_COLOR_HEX)
+        # A vászon csak az egéreseményekért kell; a képet az UpdateLayeredWindow teszi ki
+        self._canvas = tk.Canvas(self._window, bd=0, highlightthickness=0)
         self._canvas.pack(fill="both", expand=True)
-        self._image_item = self._canvas.create_image(0, 0, anchor="nw", state="hidden")
         self._bind_mouse()
         self._window.withdraw()
-        self._styled = False
 
     # --- elhelyezés -------------------------------------------------------
     def place(self, rect: ScreenRect) -> None:
+        if self._surface is None:
+            # Még rejtve: így a réteg már átlátszóként jelenik meg, nem villan fel szürkén
+            self._window.update_idletasks()
+            self._apply_window_styles()
         if rect != self._rect:
             self._rect = rect
             self._window.geometry(f"{rect.width}x{rect.height}+{rect.left}+{rect.top}")
-            self._base = np.empty((rect.height, rect.width, 3), np.uint8)
-            self._base[:] = KEY_COLOR_BGR
+            if self._surface.resize(rect.width, rect.height):
+                self._compositor.reset()  # az új felület üres: nincs rajta mit törölni
+                self._surface_is_new = True
             self.needs_redraw = True
         if not self._visible:
-            self._window.deiconify()
+            self._show_without_taking_focus()
             self._visible = True
-        if not self._styled:
-            self._window.update_idletasks()
-            self._apply_window_styles()
-            self._styled = True
+
+    def _show_without_taking_focus(self) -> None:
+        """Megjelenéskor a Tk előtérbe hozná a réteget: az addigi ablak kapja vissza a billentyűzetet."""
+        user32 = ctypes.windll.user32
+        user32.GetForegroundWindow.restype = wintypes.HWND
+        user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+        previous = user32.GetForegroundWindow()
+        self._window.deiconify()
+        self._window.update_idletasks()
+        if previous and user32.GetForegroundWindow() == self.hwnd:
+            user32.SetForegroundWindow(previous)
 
     def hide(self) -> None:
         if self._visible:
@@ -97,15 +97,24 @@ class OverlayWindow:
         return int(self._window.wm_frame(), 16)
 
     def keep_on_top(self) -> None:
-        if self._visible:
-            self._window.attributes("-topmost", True)
-            self._window.lift()
+        """A réteg maradjon a játék fölött, de ne kerüljön előtérbe.
+
+        Nem a Tk lift(): az előtérbe hozná a réteget, valahányszor a beállítóablak az aktív,
+        és másodpercenként elvenné tőle a billentyűzetet (nem lehetne a mezőibe írni).
+        """
+        if not self._visible:
+            return
+        set_window_pos = ctypes.windll.user32.SetWindowPos
+        set_window_pos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                   ctypes.c_int, wintypes.UINT]
+        set_window_pos(self.hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
 
     def _apply_window_styles(self) -> None:
         user32 = ctypes.windll.user32
         hwnd = self.hwnd
         style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
         user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW)
+        self._surface = LayeredSurface(hwnd)
         self._apply_capture_affinity()
 
     def set_capture_visible(self, visible: bool) -> None:
@@ -113,54 +122,34 @@ class OverlayWindow:
         if visible == self._capture_visible:
             return
         self._capture_visible = visible
-        if self._styled:
+        if self._surface is not None:
             self._apply_capture_affinity()
 
     def _apply_capture_affinity(self) -> None:
         affinity = WDA_NONE if self._capture_visible else WDA_EXCLUDEFROMCAPTURE
         if not ctypes.windll.user32.SetWindowDisplayAffinity(self.hwnd, affinity):
             # Régebbi Windowson nincs kizárás; ekkor a saját szövegünk helyét az OCR kitakarja
-            logger.warning("A réteg rögzíthetőségét nem sikerült beállítani (Windows 10 2004+ kell)")
+            logger.warning(t("overlay.capture_affinity_failed"))
 
     # --- rajzolás ---------------------------------------------------------
     def render(self, shown: Shown | None, hide_original: bool, preview_region: Box | None,
                backdrop: Backdrop | None = None) -> None:
-        """Csak a panelt (és a takarást) tartalmazó sávot rajzolja újra: néhány ms a teljes ablak helyett."""
-        if self._base is None:
+        """Helyben rajzol az ablak képpontjaiba, és csak a megváltozott részt teszi ki a képernyőre.
+
+        preview_region: a figyelt sáv kerete (a beállítóablak „Minta” kapcsolója).
+        """
+        if self._surface is None or self._rect is None:
             return
         self.needs_redraw = False
-        frame = self._layer.draw(self._base, shown, hide_original, preview_region, backdrop)
-        if self._layer.last_cover is not None:
-            frame = protect_from_key(frame, self._layer.last_cover)
-        if preview_region is not None:
-            frame = frame.copy() if frame is self._base else frame
-            cv2.rectangle(frame, (preview_region.left, preview_region.top),
-                          (preview_region.right, preview_region.bottom), REGION_COLOR, 2)
-        dirty = self._dirty_box(preview_region, frame.shape)
-        if dirty is None:
-            self._canvas.itemconfigure(self._image_item, state="hidden")
+        plan = self._layer.plan((self._rect.width, self._rect.height), shown, hide_original, preview_region, backdrop)
+        outlines = (preview_region,) if preview_region is not None else ()
+        changed = self._compositor.render(self._surface.pixels, plan, backdrop, outlines)
+        if changed is None and not self._surface_is_new:
             return
-        crop = frame[dirty.top:dirty.bottom, dirty.left:dirty.right, ::-1]
-        self._photo = ImageTk.PhotoImage(Image.fromarray(np.ascontiguousarray(crop)))
-        self._canvas.coords(self._image_item, dirty.left, dirty.top)
-        self._canvas.itemconfigure(self._image_item, image=self._photo, state="normal")
-
-    def _dirty_box(self, preview_region: Box | None, shape: tuple[int, ...]) -> Box | None:
-        boxes = []
-        if self._layer.last_rect is not None:
-            x, y, width, height = self._layer.last_rect
-            boxes.append(Box(x, y, x + width, y + height))
-        if self._layer.last_cover is not None:
-            boxes.append(self._layer.last_cover)
-        if preview_region is not None:
-            boxes.append(Box(preview_region.left - OUTLINE_PX, preview_region.top - OUTLINE_PX,
-                             preview_region.right + OUTLINE_PX, preview_region.bottom + OUTLINE_PX))
-        if not boxes:
-            return None
-        frame_height, frame_width = shape[:2]
-        box = Box(max(0, min(b.left for b in boxes)), max(0, min(b.top for b in boxes)),
-                  min(frame_width, max(b.right for b in boxes)), min(frame_height, max(b.bottom for b in boxes)))
-        return box if box.width > 0 and box.height > 0 else None
+        dirty = None if self._surface_is_new or changed is None else (
+            changed.left, changed.top, changed.right, changed.bottom)
+        self._surface.present(self._rect.left, self._rect.top, dirty)
+        self._surface_is_new = False
 
     # --- egér -------------------------------------------------------------
     def _bind_mouse(self) -> None:
@@ -180,4 +169,6 @@ class OverlayWindow:
             self.needs_redraw = True
 
     def destroy(self) -> None:
+        if self._surface is not None:
+            self._surface.close()
         self._window.destroy()

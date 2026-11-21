@@ -42,6 +42,23 @@ def test_each_speaker_gets_its_own_translated_line_with_name_kept():
     assert result == "Vagrant: HU(Take a breath now.)\nLucia: HU(Stop talking.)"
 
 
+def test_language_note_is_translated_but_a_speaker_name_is_kept():
+    translator = CachedTranslator(EchoBackend())
+
+    assert translator.translate("In Spanish: Eyes on the road!") == "HU(In Spanish): HU(Eyes on the road!)"
+    assert translator.translate("Jason: Eyes on the road!") == "Jason: HU(Eyes on the road!)"
+
+
+def test_language_note_is_sent_to_the_service_only_once():
+    backend = EchoBackend()
+    translator = CachedTranslator(backend)
+
+    translator.translate("In Spanish: Go!")
+    translator.translate("In Spanish: Stop!")
+
+    assert backend.calls == ["Go!", "In Spanish", "Stop!"]
+
+
 def test_only_the_new_speaker_line_goes_to_the_service():
     backend = EchoBackend()
     translator = CachedTranslator(backend)

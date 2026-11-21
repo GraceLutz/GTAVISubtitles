@@ -12,6 +12,7 @@ from functools import lru_cache
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from .compositing import paste
 from .ocr import Box
 
 MAX_TEXT_WIDTH_RATIO = 0.62
@@ -134,16 +135,12 @@ def centered_position(rendered: RenderedSubtitle, center_x: int, center_y: int,
 
 def cover_box(frame: np.ndarray, box: Box, opacity: int) -> np.ndarray:
     """Új képet ad vissza, amelyen a doboz sötétítve van (az eredeti felirat eltakarása)."""
-    result = frame.copy()
     top, bottom = max(box.top, 0), min(box.bottom, frame.shape[0])
     left, right = max(box.left, 0), min(box.right, frame.shape[1])
     if bottom <= top or right <= left:
-        return result
-    alpha = opacity / 255.0
-    area = result[top:bottom, left:right].astype(np.float32)
-    dark = np.array(PANEL_COLOR[::-1], np.float32)
-    result[top:bottom, left:right] = (dark * alpha + area * (1 - alpha)).astype(np.uint8)
-    return result
+        return frame.copy()
+    alpha = np.full((bottom - top, right - left, 1), opacity / 255.0, np.float32)
+    return paste(frame, top, left, np.array(PANEL_COLOR[::-1], np.float32), alpha)
 
 
 def subtitle_position(rendered: RenderedSubtitle, anchor: Box,
@@ -166,15 +163,11 @@ def beside_original_position(rendered: RenderedSubtitle, anchor: Box, frame_widt
 
 
 def blend(frame: np.ndarray, rendered: RenderedSubtitle, x: int, y: int) -> np.ndarray:
-    """Új képet ad vissza, amelyre a feliratpanel rá van keverve (a frame BGR)."""
-    result = frame.copy()
+    """Új képet ad vissza, amelyre a feliratpanel rá van keverve (a frame BGR vagy átlátszó BGRA)."""
     height = min(rendered.height, frame.shape[0] - y)
     width = min(rendered.width, frame.shape[1] - x)
     if height <= 0 or width <= 0:
-        return result
+        return frame.copy()
     overlay = rendered.rgba[:height, :width]
     alpha = overlay[:, :, 3:4].astype(np.float32) / 255.0
-    overlay_bgr = overlay[:, :, 2::-1].astype(np.float32)
-    target = result[y:y + height, x:x + width].astype(np.float32)
-    result[y:y + height, x:x + width] = (overlay_bgr * alpha + target * (1 - alpha)).astype(np.uint8)
-    return result
+    return paste(frame, y, x, overlay[:, :, 2::-1], alpha)

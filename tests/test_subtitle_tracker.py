@@ -54,5 +54,71 @@ def test_empty_reads_without_subtitle_emit_nothing():
     assert tracker.update("   ", 5.0) is None
 
 
-def test_normalize_collapses_whitespace():
-    assert normalize("  We   go\nnow ") == "We go now"
+def test_normalize_collapses_whitespace_within_a_line():
+    assert normalize("  We   go\tnow ") == "We go now"
+
+
+def test_short_new_line_under_a_long_one_is_a_new_subtitle():
+    # Valós eset: a rövid új sor az egész szöveghez mérve alig változtat, mégis új megszólalás
+    tracker = make_tracker()
+    long_line = "You have no idea who you're messing with."
+    tracker.update(long_line, 0.0)
+    tracker.update(long_line, 0.1)
+    both = long_line + "\nYou're good."
+
+    events = [tracker.update(both, 0.2), tracker.update(both, 0.3)]
+
+    assert NewSubtitle(both) in events
+
+
+# --- megerősítés a képpontokból (soralapú út): nem kell második olvasás -----------
+
+def test_confirmed_text_is_committed_on_its_first_read():
+    tracker = make_tracker()
+
+    assert tracker.update("We go now.", 0.0, confirmed=True) == NewSubtitle("We go now.")
+    assert tracker.current == "We go now."
+
+
+def test_confirmed_read_of_the_committed_text_does_not_retrigger():
+    tracker = make_tracker()
+    tracker.update("We go now.", 0.0, confirmed=True)
+
+    assert tracker.update("We go n0w.", 0.1, confirmed=True) is None
+
+
+def test_confirmed_text_wins_over_an_unfinished_candidate():
+    tracker = make_tracker()
+    tracker.update("First line here.", 0.0)
+
+    event = tracker.update("Something completely different.", 0.1, confirmed=True)
+
+    assert event == NewSubtitle("Something completely different.")
+    assert tracker.update("First line here.", 0.2) is None  # a régi jelölt számlálása elölről indul
+
+
+def test_confirmed_empty_text_still_waits_for_the_hold_time():
+    tracker = make_tracker(hold=0.5)
+    tracker.update("Line", 0.0, confirmed=True)
+
+    assert tracker.update("", 0.2, confirmed=True) is None
+    assert tracker.update("", 0.6, confirmed=True) == SubtitleCleared()
+
+
+def test_touch_keeps_the_subtitle_alive_while_its_pixels_are_on_screen():
+    tracker = make_tracker(hold=0.5)
+    tracker.update("Line", 0.0, confirmed=True)
+
+    tracker.touch(5.0)
+
+    assert tracker.update("", 5.3) is None  # csak 0,3 mp-e tűnt el: még várunk
+    assert tracker.update("", 5.6) == SubtitleCleared()
+
+
+def test_touch_without_a_subtitle_changes_nothing():
+    tracker = make_tracker(hold=0.5)
+
+    tracker.touch(5.0)
+
+    assert tracker.current == ""
+    assert tracker.update("", 9.0) is None

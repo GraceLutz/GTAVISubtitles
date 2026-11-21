@@ -10,6 +10,8 @@ import ctypes
 import ctypes.wintypes as wintypes
 from typing import Protocol
 
+from .i18n import t
+
 DEFAULT_PREFIX = "gta_felirat/"
 CRED_TYPE_GENERIC = 1
 CRED_PERSIST_LOCAL_MACHINE = 2
@@ -74,7 +76,7 @@ class WindowsCredentialVault:
             code = ctypes.get_last_error()
             if code == ERROR_NOT_FOUND:
                 return None
-            raise KeyVaultError(f"A(z) {name} kulcsot nem sikerült beolvasni (Windows-hiba {code})")
+            raise KeyVaultError(t("vault.load_failed", name=name, code=code))
         try:
             credential = pointer.contents
             blob = ctypes.string_at(credential.CredentialBlob, credential.CredentialBlobSize)
@@ -88,7 +90,7 @@ class WindowsCredentialVault:
         credential = _Credential(
             Type=CRED_TYPE_GENERIC,
             TargetName=self._target(name),
-            Comment="GTA feliratfordító API-kulcs",
+            Comment=t("vault.credential_comment"),
             CredentialBlobSize=len(blob),
             CredentialBlob=ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ubyte)),
             Persist=CRED_PERSIST_LOCAL_MACHINE,
@@ -96,10 +98,10 @@ class WindowsCredentialVault:
         )
         if not self._dll.CredWriteW(ctypes.byref(credential), 0):
             code = ctypes.get_last_error()
-            raise KeyVaultError(f"A(z) {name} kulcsot nem sikerült elmenteni (Windows-hiba {code})")
+            raise KeyVaultError(t("vault.save_failed", name=name, code=code))
 
     def delete(self, name: str) -> None:
         if not self._dll.CredDeleteW(self._target(name), CRED_TYPE_GENERIC, 0):
             code = ctypes.get_last_error()
             if code != ERROR_NOT_FOUND:
-                raise KeyVaultError(f"A(z) {name} kulcsot nem sikerült törölni (Windows-hiba {code})")
+                raise KeyVaultError(t("vault.delete_failed", name=name, code=code))

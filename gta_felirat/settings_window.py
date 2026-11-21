@@ -1,4 +1,4 @@
-"""A feliratpanel beállítóablaka (Tkinter): nyelv, fordító, API-kulcs, méret, átlátszóság.
+"""A feliratpanel beállítóablaka (Tkinter): felületi nyelv, célnyelv, fordító, API-kulcs, méret, átlátszóság.
 
 Ugyanabban a szálban fut, mint a játékablak: az alkalmazás minden képkockánál
 meghívja a pump()-ot, így a két ablak nem akad össze.
@@ -11,8 +11,9 @@ from tkinter import ttk
 from typing import Callable
 
 from .config import BOLD_FONT_PATH, MAX_FONT_SIZE_RATIO, MIN_FONT_SIZE_RATIO, THIN_FONT_PATH, AppConfig
+from .i18n import AUTO, UI_LANGUAGES, current_language, t
 from .languages import LANGUAGES, find_language
-from .translator import KEY_ENV_VARS, TRANSLATOR_LABELS
+from .translator import KEY_ENV_VARS, TRANSLATOR_NAMES, translator_label
 
 STATUS_REFRESH_SECONDS = 0.5
 PERCENT = 100.0
@@ -39,7 +40,6 @@ class SettingsWindow:
         self._next_status_at = 0.0
         self._visible = True
         self._root = tk.Tk()
-        self._root.title("Feliratpanel beállításai")
         self._root.resizable(False, False)
         self._root.protocol("WM_DELETE_WINDOW", callbacks.on_close or self.toggle)
         self._build()
@@ -47,18 +47,38 @@ class SettingsWindow:
 
     # --- felépítés -------------------------------------------------------
     def _build(self) -> None:
-        frame = ttk.Frame(self._root, padding=12)
-        frame.grid(sticky="nsew")
+        self._built_language = current_language()
+        self._root.title(t("settings.title"))
+        outer = ttk.Frame(self._root, padding=12)
+        outer.grid(sticky="nsew")
+        self._content = outer
+        self._build_ui_language(outer)
+        frame = ttk.Frame(outer)
+        frame.grid(row=1, column=0, sticky="nsew")
         self._build_translation(frame)
         self._build_appearance(frame)
         if self._callbacks.on_preview is not None:
             self._preview = tk.BooleanVar(value=False)
-            ttk.Checkbutton(frame, text="Mintaszöveg és a figyelt sáv mutatása (beállításhoz)",
+            ttk.Checkbutton(frame, text=t("settings.preview"),
                             variable=self._preview,
                             command=lambda: self._callbacks.on_preview(self._preview.get())
                             ).grid(row=12, column=0, columnspan=3, sticky="w", pady=(6, 0))
         self._status = ttk.Label(frame, text="", wraplength=380, foreground="#555")
         self._status.grid(row=20, column=0, columnspan=3, sticky="w", pady=(10, 0))
+
+    def _build_ui_language(self, outer: ttk.Frame) -> None:
+        # A nyelvek a saját nevükön szerepelnek: az is megtalálja a sajátját, aki a mostanit nem érti
+        self._ui_choices = {t("settings.ui_language_auto"): AUTO,
+                            **{name: code for code, name in UI_LANGUAGES.items()}}
+        self._ui_language = tk.StringVar()
+        row = ttk.Frame(outer)
+        row.grid(row=0, column=0, sticky="w", pady=(0, 8))
+        ttk.Label(row, text=f"🌐 {t('settings.ui_language')}").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        box = ttk.Combobox(row, textvariable=self._ui_language, state="readonly", width=30,
+                           values=list(self._ui_choices))
+        box.grid(row=0, column=1, sticky="w")
+        box.bind("<<ComboboxSelected>>",
+                 lambda _e: self._change({"ui_language": self._ui_choices[self._ui_language.get()]}))
 
     def _build_translation(self, frame: ttk.Frame) -> None:
         self._language = tk.StringVar()
@@ -66,7 +86,7 @@ class SettingsWindow:
         self._custom_code = tk.StringVar()
         self._key = tk.StringVar()
         self._model = tk.StringVar()
-        ttk.Label(frame, text="Célnyelv").grid(row=0, column=0, sticky="w")
+        ttk.Label(frame, text=t("settings.target_language")).grid(row=0, column=0, sticky="w")
         language_box = ttk.Combobox(frame, textvariable=self._language, state="readonly", width=26,
                                     values=[language.label for language in LANGUAGES])
         language_box.grid(row=0, column=1, sticky="w")
@@ -74,21 +94,21 @@ class SettingsWindow:
         custom = ttk.Entry(frame, textvariable=self._custom_code, width=8)
         custom.grid(row=0, column=2, padx=(6, 0))
         custom.bind("<Return>", lambda _e: self._on_custom_code())
-        ttk.Label(frame, text="(vagy nyelvkód + Enter, pl. lt)", foreground="#777").grid(
+        ttk.Label(frame, text=t("settings.custom_code_hint"), foreground="#777").grid(
             row=1, column=1, columnspan=2, sticky="w")
-        ttk.Label(frame, text="Fordító").grid(row=2, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(frame, text=t("settings.translator")).grid(row=2, column=0, sticky="w", pady=(8, 0))
         translator_box = ttk.Combobox(frame, textvariable=self._translator, state="readonly", width=26,
-                                      values=list(TRANSLATOR_LABELS.values()))
+                                      values=[translator_label(name) for name in TRANSLATOR_NAMES])
         translator_box.grid(row=2, column=1, sticky="w", pady=(8, 0))
         translator_box.bind("<<ComboboxSelected>>", lambda _e: self._on_translator_selected())
-        ttk.Label(frame, text="API-kulcs").grid(row=3, column=0, sticky="w")
+        ttk.Label(frame, text=t("settings.api_key")).grid(row=3, column=0, sticky="w")
         ttk.Entry(frame, textvariable=self._key, show="•", width=28).grid(row=3, column=1, sticky="w")
-        ttk.Button(frame, text="Mentés", command=self._on_key).grid(row=3, column=2, padx=(6, 0))
+        ttk.Button(frame, text=t("settings.save"), command=self._on_key).grid(row=3, column=2, padx=(6, 0))
         if self._callbacks.on_forget_key is not None:
-            ttk.Button(frame, text="Törlés", command=self._on_forget_key).grid(row=3, column=3, padx=(6, 0))
+            ttk.Button(frame, text=t("settings.delete"), command=self._on_forget_key).grid(row=3, column=3, padx=(6, 0))
         self._key_status = ttk.Label(frame, text="", foreground="#777", wraplength=300)
         self._key_status.grid(row=4, column=1, columnspan=2, sticky="w")
-        ttk.Label(frame, text="AI modell").grid(row=5, column=0, sticky="w")
+        ttk.Label(frame, text=t("settings.ai_model")).grid(row=5, column=0, sticky="w")
         self._model_entry = ttk.Entry(frame, textvariable=self._model, width=28)
         self._model_entry.grid(row=5, column=1, sticky="w")
         self._model_entry.bind("<Return>", lambda _e: self._on_model())
@@ -101,40 +121,39 @@ class SettingsWindow:
         self._thin_font = tk.BooleanVar()
         self._visible_in_recordings = tk.BooleanVar()
         ttk.Separator(frame).grid(row=6, column=0, columnspan=3, sticky="ew", pady=10)
-        ttk.Label(frame, text="Betűméret").grid(row=7, column=0, sticky="w")
+        ttk.Label(frame, text=t("settings.font_size")).grid(row=7, column=0, sticky="w")
         font_scale = tk.Scale(frame, variable=self._font, orient="horizontal", length=220,
                               from_=MIN_FONT_SIZE_RATIO * PERCENT, to=MAX_FONT_SIZE_RATIO * PERCENT,
                               resolution=0.1, command=lambda _v: self._on_appearance(save=False))
         font_scale.grid(row=7, column=1, columnspan=2, sticky="w")
-        ttk.Label(frame, text="Háttér fedése %").grid(row=8, column=0, sticky="w")
+        ttk.Label(frame, text=t("settings.background_opacity")).grid(row=8, column=0, sticky="w")
         opacity_scale = tk.Scale(frame, variable=self._opacity, orient="horizontal", length=220,
                                  from_=0, to=100, resolution=1,
                                  command=lambda _v: self._on_appearance(save=False))
         opacity_scale.grid(row=8, column=1, columnspan=2, sticky="w")
         for scale in (font_scale, opacity_scale):
             scale.bind("<ButtonRelease-1>", lambda _e: self._on_appearance(save=True))
-        ttk.Checkbutton(frame, text="Az angol felirat eltakarása", variable=self._hide_original,
+        ttk.Checkbutton(frame, text=t("settings.hide_original"), variable=self._hide_original,
                         command=lambda: self._change({"hide_original": self._hide_original.get()})
                         ).grid(row=9, column=1, columnspan=2, sticky="w")
-        ttk.Checkbutton(frame, text="Csak a kimondott szöveg („Név: szöveg” sorok)", variable=self._only_spoken,
+        ttk.Checkbutton(frame, text=t("settings.only_spoken"), variable=self._only_spoken,
                         command=lambda: self._change({"only_spoken_lines": self._only_spoken.get()})
                         ).grid(row=13, column=0, columnspan=3, sticky="w", pady=(6, 0))
-        ttk.Checkbutton(frame, text="Vékony betű (mint a GTA-ban)", variable=self._thin_font,
+        ttk.Checkbutton(frame, text=t("settings.thin_font"), variable=self._thin_font,
                         command=lambda: self._change(
                             {"font_path": THIN_FONT_PATH if self._thin_font.get() else BOLD_FONT_PATH})
                         ).grid(row=14, column=0, columnspan=3, sticky="w")
-        ttk.Checkbutton(frame, text="Látszódjon a felvételen és streamen (Medal, OBS, Twitch, Kick, YouTube)",
+        ttk.Checkbutton(frame, text=t("settings.visible_in_recordings"),
                         variable=self._visible_in_recordings,
                         command=lambda: self._change({"visible_in_recordings": self._visible_in_recordings.get()})
                         ).grid(row=15, column=0, columnspan=3, sticky="w")
-        ttk.Button(frame, text="Panel vissza az angol felirat helyére",
+        ttk.Button(frame, text=t("settings.reset_position"),
                    command=lambda: self._change({"subtitle_x": None, "subtitle_y": None})
                    ).grid(row=10, column=1, columnspan=2, sticky="w", pady=(4, 0))
-        preview_hint = ("A lenti jelölőnégyzet mintaszöveget mutat." if self._callbacks.on_preview
-                        else "Az r gomb mintaszöveget mutat.")
+        preview_hint = t("settings.preview_hint_checkbox" if self._callbacks.on_preview
+                         else "settings.preview_hint_key")
         ttk.Label(frame, foreground="#777", wraplength=380,
-                  text="A játékablakban a panelt egérrel húzhatod, görgővel méretezheted, "
-                       f"jobb klikkel visszaugrik. {preview_hint}").grid(
+                  text=t("settings.panel_hint", preview_hint=preview_hint)).grid(
             row=11, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
     # --- események -------------------------------------------------------
@@ -152,7 +171,7 @@ class SettingsWindow:
             self._change({"target_lang": code})
 
     def _on_translator_selected(self) -> None:
-        name = next(k for k, label in TRANSLATOR_LABELS.items() if label == self._translator.get())
+        name = next(k for k in TRANSLATOR_NAMES if translator_label(k) == self._translator.get())
         self._change({"translator": name})
 
     def _on_key(self) -> None:
@@ -179,10 +198,14 @@ class SettingsWindow:
     def sync(self, config: AppConfig) -> None:
         """Az ablak mezőit a jelenlegi beállításokhoz igazítja (pl. görgős méretezés után)."""
         self._config = config
+        if current_language() != self._built_language:
+            self._rebuild()
         self._syncing = True
         try:
+            self._ui_language.set(next(label for label, code in self._ui_choices.items()
+                                       if code == config.ui_language))
             self._language.set(find_language(config.target_lang).label)
-            self._translator.set(TRANSLATOR_LABELS.get(config.translator, config.translator))
+            self._translator.set(translator_label(config.translator))
             self._font.set(round(config.font_size_ratio * PERCENT, 1))
             self._opacity.set(round(config.panel_opacity / 255 * PERCENT))
             self._hide_original.set(config.hide_original)
@@ -199,14 +222,20 @@ class SettingsWindow:
     def _refresh_key_status(self) -> None:
         name = self._config.translator
         if name not in KEY_ENV_VARS:
-            text = "Nem kell kulcs" if name == "google" else "A meglévő kulcsok közül választ"
+            text = t("settings.key_not_needed" if name == "google" else "settings.key_auto")
         elif self._callbacks.is_key_saved is not None and self._callbacks.is_key_saved(name):
-            text = "✓ Kulcs elmentve (Windows Hitelesítőadat-kezelő)"
+            text = t("settings.key_saved")
         elif self._callbacks.has_key(name):
-            text = "✓ Kulcs megvan (ebben a futásban)"
+            text = t("settings.key_session")
         else:
-            text = f"Nincs kulcs: írd be fent, vagy állítsd be a {KEY_ENV_VARS[name]} változót"
+            text = t("settings.key_missing", variable=KEY_ENV_VARS[name])
         self._key_status.configure(text=text)
+
+    def _rebuild(self) -> None:
+        """A felületi nyelv váltása után az ablak az új nyelven épül újra."""
+        # Csak a saját tartalmunkat bontjuk le: a gyökér alatt él a feliratréteg ablaka is
+        self._content.destroy()
+        self._build()
 
     def toggle(self) -> None:
         self._visible = not self._visible

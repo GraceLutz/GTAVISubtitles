@@ -1,16 +1,31 @@
-"""Az angol felirat kiolvasása a képkocka alsó sávjából (RapidOCR)."""
+"""Az angol felirat kiolvasása a képkocka alsó sávjából (RapidOCR).
+
+Két lépésben olvasunk: előbb megkeressük, hol van feliratszínű szöveg a sáv közepén (keresés),
+aztán csak ezeket a sorokat olvassuk be (olvasás). Így a kijelző többi szövegére nem megy idő,
+és egy már ismert helyű sort keresés nélkül is újra lehet olvasni (read_rows).
+"""
 
 import re
 from dataclasses import dataclass
+from typing import Protocol
 
+import cv2
 import numpy as np
 
 from .config import Region
+from .fragment_filter import (DIALOGUE_BOTTOM_RATIO, MIN_WHITE_FRACTION, Fragment, FrameCenter, row_pieces,
+                              select_subtitle, white_fraction)
 
-BRIGHT_PIXEL_LEVEL = 200
-MIN_BRIGHT_FRACTION = 0.002
+BRIGHT_PIXEL_LEVEL = 160  # a tévéműsor halványabb felirata (~183) is számítson
+# Sötét jelenetben egy rövid sor („It's me.”) a sáv ~0,1%-a; 0,2%-os küszöbbel be sem olvastuk
+MIN_BRIGHT_FRACTION = 0.0003
 LINE_MERGE_TOLERANCE_PX = 12
-DET_MAX_SIDE_PX = 960
+# A kereső a kép szélességének ezt a középső részét nézi: a párbeszéd középen áll, a kijelző nem
+DETECT_SPAN = (0.22, 0.78)
+EDGE_MARGIN_PX = 6  # ennél közelebb a kivágás széléhez: a sor valószínűleg kilóg belőle
+CUT_OFF_MIN_WIDTH_RATIO = 0.7  # a kivágás széléig érő, középre igazított sor legalább ilyen széles
+ROW_PAD_X_AT_1080P = 8  # az olvasáshoz a sort oldalt ennyivel bővítjük (a kereső a záró pontokat gyakran levágja)
+REFERENCE_FRAME_HEIGHT = 1080
 # Zajszűrés: HUD-töredékek, táblák ("OD", "k Mall") ne menjenek fordításra
 MIN_LETTERS_PLAIN = 8
 MIN_LETTERS_SENTENCE = 2
@@ -48,12 +63,29 @@ class Box:
 
 
 @dataclass(frozen=True)
-class OcrResult:
+class OcrLine:
     text: str
+    box: Box
+    rows: tuple[Box, ...] = ()  # a megszólalás képernyősorai (kettő, ha a mondat két sorba tört)
+
+
+@dataclass(frozen=True)
+class OcrResult:
+    text: str  # a megszólalások sortöréssel elválasztva
     box: Box | None
+    lines: tuple[OcrLine, ...] = ()  # megszólalásonként a szöveg és a helye
 
 
 EMPTY_RESULT = OcrResult(text="", box=None)
+
+
+def frame_center(region: Region, area: Box) -> FrameCenter:
+    """A teljes kép közepe és a párbeszédsorok alsó határa; area: a feliratsáv helye a képen."""
+    frame_width = area.width / (region.right - region.left)
+    frame_height = area.height / (region.bottom - region.top)
+    frame_top = area.top - region.top * frame_height
+    return FrameCenter(area.left + (0.5 - region.left) * frame_width, frame_width,
+                       frame_top + DIALOGUE_BOTTOM_RATIO * frame_height)
 
 
 def region_to_box(region: Region, frame_width: int, frame_height: int) -> Box:
@@ -67,9 +99,10 @@ def region_to_box(region: Region, frame_width: int, frame_height: int) -> Box:
 
 def has_bright_text(crop: np.ndarray) -> bool:
     """Gyors előszűrés: a GTA-felirat fehér, ha nincs világos pixel, nincs felirat."""
-    gray = crop.max(axis=2) if crop.ndim == 3 else crop
-    bright_fraction = float((gray >= BRIGHT_PIXEL_LEVEL).mean())
-    return bright_fraction >= MIN_BRIGHT_FRACTION
+    # cv2-vel 0,6 ms a teljes sávon; a numpy max(axis=2) ugyanerre ~10 ms
+    gray = cv2.max(cv2.max(crop[:, :, 0], crop[:, :, 1]), crop[:, :, 2]) if crop.ndim == 3 else crop
+    bright = cv2.countNonZero(cv2.compare(gray, BRIGHT_PIXEL_LEVEL, cv2.CMP_GE))
+    return bright >= MIN_BRIGHT_FRACTION * gray.size
 
 
 def _is_stray_glyph(token: str) -> bool:
@@ -169,17 +202,38 @@ def looks_like_subtitle(text: str) -> bool:
     return letters >= MIN_LETTERS_PLAIN
 
 
+def _rows(fragments: list[tuple[str, Box]]) -> list[OcrLine]:
+    """A felismert darabok képernyősoronként (fentről le, balról jobbra) összefűzve."""
+    ordered = sorted(fragments, key=lambda item: (item[1].top, item[1].left))
+    rows: list[list[tuple[str, Box]]] = []
+    for text, box in ordered:
+        if rows and abs(rows[-1][0][1].top - box.top) <= LINE_MERGE_TOLERANCE_PX:
+            rows[-1].append((text, box))
+        else:
+            rows.append([(text, box)])
+    lines = []
+    for row in rows:
+        box = union_box([b for _, b in row])
+        lines.append(OcrLine(" ".join(t for t, _ in sorted(row, key=lambda i: i[1].left)), box, (box,)))
+    return lines
+
+
 def join_lines(fragments: list[tuple[str, Box]]) -> str:
     """A felismert darabokat soronként (fentről le, balról jobbra) fűzi össze."""
-    ordered = sorted(fragments, key=lambda item: (item[1].top, item[1].left))
-    lines: list[list[tuple[str, Box]]] = []
-    for text, box in ordered:
-        if lines and abs(lines[-1][0][1].top - box.top) <= LINE_MERGE_TOLERANCE_PX:
-            lines[-1].append((text, box))
-        else:
-            lines.append([(text, box)])
-    rendered = [" ".join(t for t, _ in sorted(line, key=lambda i: i[1].left)) for line in lines]
-    return " ".join(rendered).strip()
+    return " ".join(row.text for row in _rows(fragments)).strip()
+
+
+def spoken_lines(fragments: list[tuple[str, Box]]) -> tuple[OcrLine, ...]:
+    """Megszólalásonként egy sor: a lezáratlan mondat a következő képernyősorban folytatódik."""
+    lines: list[OcrLine] = []
+    for row in _rows(fragments):
+        if lines and not lines[-1].text.endswith(SENTENCE_END):
+            previous = lines.pop()
+            row = OcrLine(f"{previous.text} {row.text}", union_box([previous.box, row.box]),
+                          previous.rows + row.rows)
+        lines.append(row)
+    cleaned = (OcrLine(clean_ocr_text(line.text), line.box, line.rows) for line in lines)
+    return tuple(line for line in cleaned if line.text)
 
 
 def union_box(boxes: list[Box]) -> Box:
@@ -202,28 +256,23 @@ def _polygon_to_box(points, offset: Box) -> Box:
     )
 
 
-class SubtitleReader:
-    def __init__(self, region: Region, min_score: float) -> None:
-        # Lassú import, ezért csak itt töltjük be
-        from rapidocr import RapidOCR
+class TextEngine(Protocol):
+    """Amit a szövegkeresőtől és -olvasótól várunk (ocr_engine.OcrEngine; a tesztekben hamisítvány)."""
 
-        # Az alapbeállítás a keskeny feliratsávot ~5000 px szélesre nagyítaná (1,3 s/olvasás);
-        # max 960 px-re korlátozva ~75 ms ugyanazzal a pontossággal
-        self._engine = RapidOCR(params={
-            "Global.log_level": "error",
-            "Global.use_cls": False,
-            "Det.limit_type": "max",
-            "Det.limit_side_len": DET_MAX_SIDE_PX,
-        })
+    def detect(self, image: np.ndarray) -> list[np.ndarray]: ...
+
+    def recognise(self, patches: list[np.ndarray]) -> list[tuple[str, float]]: ...
+
+
+class SubtitleReader:
+    def __init__(self, region: Region, min_score: float, engine: TextEngine | None = None) -> None:
+        if engine is None:
+            from .ocr_engine import OcrEngine  # lassú betöltés (modellek), ezért csak itt
+
+            engine = OcrEngine()
+        self._engine = engine
         self._region = region
         self._min_score = min_score
-        self._warm_up()
-
-    def _warm_up(self) -> None:
-        # Az első hívás pár másodperc (modellbetöltés); ne játék közben fusson le
-        dummy = np.zeros((64, 256, 3), np.uint8)
-        dummy[24:40, 16:240] = 255
-        self._engine(dummy)
 
     def read(self, frame: np.ndarray) -> OcrResult:
         height, width = frame.shape[:2]
@@ -234,17 +283,57 @@ class SubtitleReader:
         """Már kivágott feliratsáv olvasása; area: a sáv helye a teljes képen."""
         if crop.size == 0 or not has_bright_text(crop):
             return EMPTY_RESULT
-        output = self._engine(crop)
-        if output is None or not getattr(output, "txts", None):
+        rows = self.detect_rows(crop, area)
+        if not rows:
             return EMPTY_RESULT
-        fragments = [
-            (text.strip(), _polygon_to_box(points, area))
-            for text, score, points in zip(output.txts, output.scores, output.boxes)
-            if score >= self._min_score and text.strip()
-        ]
+        boxes = [(text, box) for box, (text, score) in zip(rows, self.read_rows(crop, area, rows))
+                 if score >= self._min_score and text]
+        # Rendszám, minitérkép-betű és társai ne keveredjenek a feliratba
+        fragments = select_subtitle([Fragment(text, box, white_fraction(crop, box, area)) for text, box in boxes],
+                                    frame_center(self._region, area))
         if not fragments:
             return EMPTY_RESULT
-        text = clean_ocr_text(join_lines(fragments))
-        if not looks_like_subtitle(text):
+        lines = spoken_lines([(f.text, f.box) for f in fragments])
+        if not looks_like_subtitle(" ".join(line.text for line in lines)):
             return EMPTY_RESULT
-        return OcrResult(text=text, box=union_box([b for _, b in fragments]))
+        return OcrResult(text="\n".join(line.text for line in lines), box=union_box([line.box for line in lines]),
+                         lines=lines)
+
+    def detect_rows(self, crop: np.ndarray, area: Box) -> list[Box]:
+        """A feliratszínű szövegdarabok dobozai (a teljes képen), képernyősoronként; olvasás nélkül (~25 ms)."""
+        left, right = self._detect_columns(area)
+        rows = self._detect(crop, area, left, right)
+        if (left, right) != (0, area.width) and any(self._is_cut_off(box, area, left, right) for box in rows):
+            rows = self._detect(crop, area, 0, area.width)  # egy sor kilóg a középső részből: az egész sávot nézzük
+        return rows
+
+    def _detect_columns(self, area: Box) -> tuple[int, int]:
+        """A sáv oszlopai, amelyeket a kereső megnéz (a kép szélességének középső része)."""
+        frame_width = area.width / (self._region.right - self._region.left)
+        frame_left = area.left - self._region.left * frame_width
+        left = int(frame_left + DETECT_SPAN[0] * frame_width) - area.left
+        right = int(frame_left + DETECT_SPAN[1] * frame_width) - area.left
+        return max(left, 0), min(right, area.width)
+
+    @staticmethod
+    def _is_cut_off(box: Box, area: Box, left: int, right: int) -> bool:
+        touches = box.left - area.left - left <= EDGE_MARGIN_PX or right - (box.right - area.left) <= EDGE_MARGIN_PX
+        return touches and box.width >= CUT_OFF_MIN_WIDTH_RATIO * (right - left)
+
+    def _detect(self, crop: np.ndarray, area: Box, left: int, right: int) -> list[Box]:
+        offset = Box(area.left + left, area.top, area.left + right, area.bottom)
+        boxes = [_polygon_to_box(points, offset) for points in self._engine.detect(crop[:, left:right])]
+        # A nem feliratszínű darabot a szűrő úgyis eldobná: ne fizessünk darabonként 20–90 ms-ot az olvasásáért
+        white = [box for box in boxes if white_fraction(crop, box, area) >= MIN_WHITE_FRACTION]
+        return row_pieces(white)
+
+    def read_rows(self, crop: np.ndarray, area: Box, rows: list[Box]) -> list[tuple[str, float]]:
+        """(szöveg, bizonyosság) a megadott sordobozokhoz (a teljes képen); keresés nélkül (~25–65 ms soronként)."""
+        frame_height = area.height / (self._region.bottom - self._region.top)
+        pad = max(1, round(ROW_PAD_X_AT_1080P * frame_height / REFERENCE_FRAME_HEIGHT))
+        patches = []
+        for row in rows:
+            top, bottom = max(row.top - area.top, 0), min(row.bottom - area.top, crop.shape[0])
+            left, right = max(row.left - area.left - pad, 0), min(row.right - area.left + pad, crop.shape[1])
+            patches.append(crop[top:bottom, left:right])
+        return self._engine.recognise(patches)

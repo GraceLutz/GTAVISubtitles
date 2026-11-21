@@ -16,14 +16,14 @@ $ForbiddenFiles = @("mentett_forditasok.json", ".env", "*.tmp")
 
 $python = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
 if (-not (Test-Path $python)) {
-    throw "Nincs .venv. Előbb futtasd egyszer az .\inditas.ps1-et, az telepíti a függőségeket."
+    throw "No .venv found. Run .\inditas.ps1 once first; it installs the dependencies."
 }
 if ($PSScriptRoot.Length -gt $MaxSafePathLength) {
-    Write-Warning "A projekt útvonala hosszú ($PSScriptRoot). Ha az exe nem tölti be az OCR-t, buildelj rövidebb helyről, pl. C:\gta_felirat."
+    Write-Warning "The project path is long ($PSScriptRoot). If the exe cannot load the OCR, build from a shorter path, e.g. C:\gta_felirat."
 }
 
 & $python -m pip install --disable-pip-version-check -q "pyinstaller==$PyInstallerVersion"
-if ($LASTEXITCODE -ne 0) { throw "A PyInstaller telepítése nem sikerült." }
+if ($LASTEXITCODE -ne 0) { throw "Installing PyInstaller failed." }
 
 $distDir = Join-Path $PSScriptRoot "dist"
 $buildDir = Join-Path $PSScriptRoot "build"
@@ -54,7 +54,7 @@ function Invoke-PyInstaller([string]$Mode, [string]$WorkDir) {
         --collect-binaries onnxruntime `
         --exclude-module pytest `
         $launcher
-    if ($LASTEXITCODE -ne 0) { throw "A PyInstaller build ($Mode) nem sikerült." }
+    if ($LASTEXITCODE -ne 0) { throw "PyInstaller build ($Mode) failed." }
 }
 
 Invoke-PyInstaller "--onedir" (Join-Path $buildDir "onedir")
@@ -62,17 +62,17 @@ Invoke-PyInstaller "--onefile" (Join-Path $buildDir "onefile")
 
 # A mappás változatban a config.json eleve az exe mellett van (onnan olvas és oda ment a program)
 Copy-Item $defaultConfig (Join-Path $appDir "config.json")
-Copy-Item (Join-Path $PSScriptRoot "packaging\OLVASS_EL.txt") (Join-Path $appDir "OLVASS_EL.txt")
+Copy-Item (Join-Path $PSScriptRoot "packaging\README.txt") (Join-Path $appDir "README.txt")
 
 # Mindkét változat ugyanazokat a fájlokat csomagolja, ezért a mappás változaton ellenőrzünk
 $leaked = Get-ChildItem $appDir -Recurse -File -Include $ForbiddenFiles
 if ($leaked) {
-    throw "Tiltott fájl került a csomagba: $($leaked.FullName -join ', ')"
+    throw "A forbidden file ended up in the package: $($leaked.FullName -join ', ')"
 }
 $models = Get-ChildItem $appDir -Recurse -Filter "*.onnx"
 $ortDll = Get-ChildItem $appDir -Recurse -Filter "onnxruntime.dll"
 if (-not $models -or -not $ortDll) {
-    throw "Hiányzik a RapidOCR-modell vagy az onnxruntime.dll a csomagból."
+    throw "The RapidOCR model or onnxruntime.dll is missing from the package."
 }
 
 if (Test-Path $zipPath) { Remove-Item $zipPath }
@@ -80,5 +80,5 @@ Compress-Archive -Path $appDir -DestinationPath $zipPath -CompressionLevel Optim
 
 foreach ($artifact in @($oneFileExe, $zipPath)) {
     $sizeMb = [math]::Round((Get-Item $artifact).Length / 1MB, 1)
-    Write-Host "Kész: $artifact ($sizeMb MB)"
+    Write-Host "Done: $artifact ($sizeMb MB)"
 }

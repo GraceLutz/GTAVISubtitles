@@ -6,6 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from .config import AppConfig, ConfigError, save_settings
+from .i18n import set_language, t
 from .key_vault import KeyVault, KeyVaultError, WindowsCredentialVault
 from .ocr import SubtitleReader
 from .subtitle_layer import SubtitleLayer
@@ -27,9 +28,13 @@ class SubtitleAppBase:
         store = TranslationStore(config_path.parent / STORE_FILE_NAME) if config_path else None
         self._translation = TranslationService(choice_from(config), translator, store,
                                                vault=_open_key_vault() if config_path else None)
-        self._pipeline = SubtitlePipeline(config, reader, self._translation)
+        self._pipeline = self._create_pipeline(config, reader)
         self._subtitles = SubtitleLayer(config, on_change=self.apply_updates)
         self._settings = None
+
+    def _create_pipeline(self, config: AppConfig, reader: SubtitleReader) -> SubtitlePipeline:
+        """Alosztály felülírhatja (a Remote Play mód soralapú pipeline-t használ)."""
+        return SubtitlePipeline(config, reader, self._translation)
 
     def apply_updates(self, updates: dict, save: bool = True) -> None:
         """A panelből vagy egérrel jövő módosítás: azonnal életbe lép, és mentődik."""
@@ -37,9 +42,11 @@ class SubtitleAppBase:
             new_config = replace(self._config, **updates)
             new_config.validate()
         except (ConfigError, TypeError) as err:
-            logger.warning("Érvénytelen beállítás: %s", err)
+            logger.warning(t("app.invalid_setting", err=err))
             return
         self._config = new_config
+        if "ui_language" in updates:
+            set_language(new_config.ui_language)  # a beállítóablak a sync()-ben újraépül
         self._subtitles.update_config(new_config)
         self._pipeline.update_config(new_config)
         if TRANSLATOR_FIELDS & set(updates):
@@ -71,7 +78,7 @@ class SubtitleAppBase:
         try:
             save_settings(self._config_path, updates)
         except (ConfigError, OSError) as err:
-            logger.warning("A beállítást nem sikerült menteni: %s", err)
+            logger.warning(t("app.save_failed", err=err))
 
     def _create_settings_window(self, **extra):
         from .settings_window import SettingsCallbacks, SettingsWindow
@@ -89,5 +96,5 @@ def _open_key_vault() -> KeyVault | None:
     try:
         return WindowsCredentialVault()
     except (OSError, KeyVaultError) as err:
-        logger.warning("A kulcsok mentése nem elérhető: %s", err)
+        logger.warning(t("app.key_vault_unavailable", err=err))
         return None

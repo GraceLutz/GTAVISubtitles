@@ -12,16 +12,17 @@ from concurrent.futures import Future, ThreadPoolExecutor
 import numpy as np
 
 from .config import AppConfig
-from .ocr import Box, OcrResult, SubtitleReader, is_spoken_line, region_to_box
-from .subtitle_layer import Shown
-from .subtitle_tracker import NewSubtitle, SubtitleCleared, SubtitleTracker, normalize, similarity
+from .i18n import t
+from .line_placement import PendingLines, TranslatedLine, build_shown, match_lines, pair_lines
+from .ocr import Box, OcrLine, OcrResult, SubtitleReader, is_spoken_line, region_to_box
+from .layer_plan import Shown
+from .subtitle_tracker import (NewSubtitle, SubtitleCleared, SubtitleTracker, is_same_subtitle, normalize,
+                               similarity)
 from .translation_service import TranslationService
 from .translator import TranslationError
 
-FAILED_PREFIX = "(fordítás nem sikerült) "
 # Egy fordításra legfeljebb ennyit várunk, utána feladjuk (újrapróbálással együtt)
 TRANSLATION_DEADLINE_SECONDS = 10.0
-TIMEOUT_PREFIX = "(a fordítás 10 mp alatt nem jött meg) "
 # Előre indított + megerősített fordítás egyszerre is futhat, holtpont nélkül
 TRANSLATE_WORKERS = 3
 
@@ -41,6 +42,10 @@ class SubtitlePipeline:
         self._pending_source_text = ""
         self._translate_started_at = 0.0
         self._last_box: Box | None = None
+        self._live_lines: tuple[OcrLine, ...] = ()  # a legutóbbi olvasás angol sorai, a helyükkel
+        self._translated: tuple[TranslatedLine, ...] = ()  # a kiírt fordítás soronként
+        self._block: Shown | None = None  # egy tömbben kiírt szöveg (hibaüzenet, eltérő sorszám)
+        self._pending = PendingLines()
         self._last_prefetch = ""
         self._next_ocr_at = 0.0
         self._frame_size = (1920, 1080)
@@ -90,7 +95,7 @@ class SubtitlePipeline:
         """Begyűjti a kész OCR-t és fordítást. True, ha a kiírt felirat megváltozott."""
         before = self.shown
         self._collect_ocr(now)
-        self._collect_translation()
+        self._collect_translation(now)
         return self.shown is not before
 
     def retranslate_current(self) -> None:
@@ -108,7 +113,7 @@ class SubtitlePipeline:
         try:
             result = future.result()
         except Exception:
-            logger.exception("OCR hiba")
+            logger.exception(t("pipeline.ocr_error"))
             return
         if self._is_own_translation(result.text):
             return  # a saját kiírt fordításunkat olvastuk vissza, nem új felirat
@@ -117,11 +122,32 @@ class SubtitlePipeline:
             text = ""  # küldetésszöveg, tábla, menü: nem kimondott szöveg, nem fordítjuk
         self._prefetch(text)
         event = self._tracker.update(text, now)
+        if text:
+            self._live_lines = result.lines
+            self._follow_live_lines(now)
         if isinstance(event, NewSubtitle):
             self._last_box = result.box
             self._start_translation(event.text)
         elif isinstance(event, SubtitleCleared):
-            self.shown = None
+            self._forget_subtitle()
+
+    def _forget_subtitle(self) -> None:
+        """A felirat eltűnt: semmi sem marad kiírva, és a soronkénti fordítását is elfelejtjük."""
+        self.shown = None
+        self._translated = ()
+        self._block = None
+        self._live_lines = ()
+        self._pending.clear()
+
+    def _follow_live_lines(self, now: float) -> None:
+        """A fordítás sorai oda kerülnek, ahol az angol párjuk most áll (a játék görgeti a sorokat).
+
+        A még le nem fordított angol sort rövid ideig csak eltakarjuk, hogy ne villanjon fel.
+        """
+        if not self._live_lines or self._block is not None:
+            return  # nincs soronkénti hely, vagy egy tömbben álló üzenet látszik
+        pairs, untranslated = match_lines(self._translated, self._live_lines)
+        self.shown = build_shown(pairs, self._pending.boxes_to_hide(untranslated, now), self.shown)
 
     def _is_own_translation(self, raw_text: str) -> bool:
         if self.shown is None or not raw_text.strip():
@@ -132,9 +158,9 @@ class SubtitlePipeline:
         """Új szöveg első olvasásakor már fordítunk; a megerősítés a kész eredményt kapja."""
         text = normalize(raw_text)
         threshold = self._config.similarity_threshold
-        if not text or similarity(text, self._tracker.current) >= threshold:
+        if not text or is_same_subtitle(text, self._tracker.current, threshold):
             return
-        if similarity(text, self._last_prefetch) >= threshold:
+        if is_same_subtitle(text, self._last_prefetch, threshold):
             return  # ugyanannak a sornak egy OCR-változata, nem küldjük újra
         self._last_prefetch = text
         self._translation.prefetch(text, self._translate_pool)
@@ -151,11 +177,14 @@ class SubtitlePipeline:
         source_text = self._pending_source_text
         if source_text != self._tracker.current:
             return
-        logger.warning("A fordítás %.0f mp alatt nem jött meg, feladom", TRANSLATION_DEADLINE_SECONDS)
+        logger.warning(t("pipeline.translation_timeout", seconds=TRANSLATION_DEADLINE_SECONDS))
         anchor = self._last_box or region_to_box(self._config.subtitle_region, *self._frame_size)
-        self.shown = Shown(text=TIMEOUT_PREFIX + source_text, anchor=anchor)
+        prefix = t("pipeline.timeout_prefix", seconds=TRANSLATION_DEADLINE_SECONDS)
+        self._translated = ()
+        self._block = Shown(text=f"{prefix} {source_text}", anchor=anchor)
+        self.shown = self._block
 
-    def _collect_translation(self) -> None:
+    def _collect_translation(self, now: float) -> None:
         if self._translate_future is None:
             return
         if not self._translate_future.done():
@@ -166,11 +195,24 @@ class SubtitlePipeline:
         source_text = self._pending_source_text
         if source_text != self._tracker.current:
             return  # közben már másik felirat jelent meg
+        self._translated = ()
+        self._block = None
         try:
             translated = future.result()
             logger.info("→ %s", translated)
+            self._translated = pair_lines(source_text, translated)
         except TranslationError as err:
             logger.warning("%s", err)
-            translated = FAILED_PREFIX + source_text
+            translated = t("pipeline.failed_prefix") + " " + source_text
+        if self._has_line_places():
+            self._follow_live_lines(now)
+            return
+        # Nincs soronkénti hely (régi olvasó, hibaüzenet, eltérő sorszám): egy tömbben, az angol helyén
         anchor = self._last_box or region_to_box(self._config.subtitle_region, *self._frame_size)
-        self.shown = Shown(text=translated, anchor=anchor)
+        self._translated = ()
+        self._block = Shown(text=translated, anchor=anchor)
+        self.shown = self._block
+
+    def _has_line_places(self) -> bool:
+        """Kiírható-e soronként a kész fordítás: látszik-e most valamelyik sorának az angol párja."""
+        return bool(self._translated) and bool(match_lines(self._translated, self._live_lines)[0])

@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .i18n import t
 from .ocr import Box
 
 DPI_AWARENESS_PER_MONITOR = 2
@@ -67,7 +68,7 @@ def find_window(title: str) -> int:
 
     user32.EnumWindows(visit, 0)
     if not found:
-        raise WindowNotFoundError(f"Nem találom a(z) „{title}” ablakot. Fut, és csatlakozott a konzolhoz?")
+        raise WindowNotFoundError(t("capture.window_not_found", title=title))
     return found[0]
 
 

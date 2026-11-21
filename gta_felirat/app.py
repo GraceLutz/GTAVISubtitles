@@ -15,6 +15,7 @@ from .config import AppConfig
 from .facecam import FacecamStyle, place_facecam
 from .facecam_drag import FacecamDragger
 from .frosted_cover import Backdrop
+from .i18n import t
 from .ocr import Box, SubtitleReader, region_to_box
 from .translator import CachedTranslator
 
@@ -106,7 +107,7 @@ class OverlayApp(SubtitleAppBase):
         try:
             cam_frame = self._webcam.latest()
         except CaptureError as err:
-            logger.warning("Webkamera kikapcsolva: %s", err)
+            logger.warning(t("app.webcam_disabled", err=err))
             self._webcam.stop()
             self._webcam = None
             return frame

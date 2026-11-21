@@ -44,7 +44,7 @@ def test_saved_key_is_used_at_startup_without_typing_it_again():
 
     assert service.has_key("deepl")
     assert service.is_key_saved("deepl")
-    assert "hiányzik" not in service.status()
+    assert "missing" not in service.status()
 
 
 def test_key_typed_in_the_panel_is_saved_for_next_start():

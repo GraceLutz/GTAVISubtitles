@@ -6,11 +6,12 @@ import time
 from concurrent.futures import Executor, Future
 
 from .config import AppConfig
+from .i18n import t
 from .key_vault import KeyVault, KeyVaultError
 from .languages import find_language
 from .translation_store import TranslationStore
-from .translator import (KEY_ENV_VARS, TRANSLATOR_LABELS, CachedTranslator, TranslationError, TranslatorChoice,
-                         create_backend, resolve_backend_name, resolve_key)
+from .translator import (KEY_ENV_VARS, CachedTranslator, TranslationError, TranslatorChoice,
+                         create_backend, resolve_backend_name, resolve_key, translator_label)
 
 # Ennyi csend után egy ingyenes kéréssel nyitva tartjuk a kapcsolatot (a szerverek ~60 mp után zárnak)
 KEEP_WARM_SECONDS = 20.0
@@ -84,7 +85,7 @@ class TranslationService:
                 self._vault.save(name, key)
                 self._saved_key_names.add(name)
             except KeyVaultError as err:
-                logger.warning("%s; ebben a futásban így is használom", err)
+                logger.warning(t("service.key_used_this_run", err=err))
         self.rebuild(self._choice)
 
     def forget_key(self, name: str) -> None:
@@ -125,14 +126,14 @@ class TranslationService:
             try:
                 return pending.result()
             except TranslationError:
-                logger.info("Az előre indított fordítás nem sikerült, újrapróbálom")
+                logger.info(t("service.prefetch_failed"))
         return self._translate_now(text)
 
     def _translate_now(self, text: str) -> str:
         with self._lock:
             translator, error = self._translator, self._error
         if translator is None:
-            raise TranslationError(error or "Nincs beállított fordító")
+            raise TranslationError(error or t("service.no_translator"))
         started = time.monotonic()
         result = translator.translate(text)
         self._last_latency_ms = int((time.monotonic() - started) * 1000)
@@ -161,7 +162,8 @@ class TranslationService:
         with self._lock:
             choice, error = self._choice, self._error
         backend = resolve_backend_name(choice.name, self._session_keys)
-        text = f"Fordító: {TRANSLATOR_LABELS.get(backend, backend)} → {find_language(choice.target_lang).label}"
+        text = t("translator.active", translator=translator_label(backend),
+                 language=find_language(choice.target_lang).label)
         if self._last_latency_ms is not None:
-            text += f" · utolsó fordítás {self._last_latency_ms} ms"
+            text += " · " + t("service.last_latency", ms=self._last_latency_ms)
         return f"{text}\n⚠ {error}" if error else text

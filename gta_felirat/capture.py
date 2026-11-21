@@ -8,6 +8,8 @@ import time
 import cv2
 import numpy as np
 
+from .i18n import t
+
 MAX_PROBED_DEVICES = 8
 READ_FAILURE_LIMIT = 60
 RETRY_SLEEP_SECONDS = 0.05
@@ -26,7 +28,7 @@ def _backend() -> int:
 def open_device(index: int, width: int, height: int, fps: int) -> cv2.VideoCapture:
     capture = cv2.VideoCapture(index, _backend())
     if not capture.isOpened():
-        raise CaptureError(f"A(z) {index}. videóeszköz nem nyitható meg")
+        raise CaptureError(t("capture.device_open_failed", index=index))
     # USB-s capture cardok 1080p60-at jellemzően csak MJPG-ben adnak
     capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)
@@ -88,7 +90,7 @@ class FrameGrabber:
             failures += 1
             if failures >= READ_FAILURE_LIMIT:
                 with self._lock:
-                    self._error = CaptureError("A capture card nem ad képet (kábel / eszköz?)")
-                logger.error("Képolvasás sikertelen %d alkalommal egymás után", failures)
+                    self._error = CaptureError(t("capture.no_signal"))
+                logger.error(t("capture.read_failed", count=failures))
                 return
             time.sleep(RETRY_SLEEP_SECONDS)

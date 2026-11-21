@@ -25,13 +25,26 @@ TrackerEvent = NewSubtitle | SubtitleCleared
 
 
 def normalize(text: str) -> str:
-    return _WHITESPACE.sub(" ", text).strip()
+    """Egységes szóközök; a sortörés (megszólalásonként külön sor) megmarad."""
+    lines = (_WHITESPACE.sub(" ", line).strip() for line in text.split("\n"))
+    return "\n".join(line for line in lines if line)
 
 
 def similarity(first: str, second: str) -> float:
     if not first or not second:
         return 0.0
     return SequenceMatcher(None, first.lower(), second.lower()).ratio()
+
+
+def is_same_subtitle(first: str, second: str, threshold: float) -> bool:
+    """Ugyanaz a felirat: ugyanannyi sor, és soronként hasonlók.
+
+    Soronként nézzük, mert egy hosszú sor alá érkező rövid új sor („You're good.”) az egész
+    szöveghez mérve alig számít, pedig új megszólalás.
+    """
+    first_lines, second_lines = first.split("\n"), second.split("\n")
+    return len(first_lines) == len(second_lines) and all(
+        similarity(a, b) >= threshold for a, b in zip(first_lines, second_lines))
 
 
 class SubtitleTracker:
@@ -48,15 +61,27 @@ class SubtitleTracker:
     def current(self) -> str:
         return self._committed
 
-    def update(self, raw_text: str, now: float) -> TrackerEvent | None:
+    def update(self, raw_text: str, now: float, confirmed: bool = False) -> TrackerEvent | None:
+        """Egy olvasás eredménye.
+
+        confirmed: a hívó már tudja, hogy a szöveg stabil (a soralapú úton a sor képpontjai nem
+        változnak), ezért nem kell hozzá még egy egyező olvasás.
+        """
         text = normalize(raw_text)
         if not text:
             return self._handle_empty(now)
-        if similarity(text, self._committed) >= self._threshold:
+        if is_same_subtitle(text, self._committed, self._threshold):
             self._last_seen = now
             self._candidate, self._candidate_count = "", 0
             return None
+        if confirmed:
+            return self._commit(text, now)
         return self._handle_candidate(text, now)
+
+    def touch(self, now: float) -> None:
+        """A kiírt felirat még látszik (a képpontok szerint): az eltűnés utáni várakozás órája innen indul."""
+        if self._committed:
+            self._last_seen = now
 
     def _handle_empty(self, now: float) -> TrackerEvent | None:
         self._candidate, self._candidate_count = "", 0
@@ -66,7 +91,7 @@ class SubtitleTracker:
         return None
 
     def _handle_candidate(self, text: str, now: float) -> TrackerEvent | None:
-        if similarity(text, self._candidate) >= self._threshold:
+        if is_same_subtitle(text, self._candidate, self._threshold):
             self._candidate_count += 1
             # A hosszabb változat általában a teljesebb olvasat
             if len(text) > len(self._candidate):
@@ -75,7 +100,10 @@ class SubtitleTracker:
             self._candidate, self._candidate_count = text, 1
         if self._candidate_count < self._stable_reads:
             return None
-        self._committed = self._candidate
+        return self._commit(self._candidate, now)
+
+    def _commit(self, text: str, now: float) -> NewSubtitle:
+        self._committed = text
         self._last_seen = now
         self._candidate, self._candidate_count = "", 0
-        return NewSubtitle(self._committed)
+        return NewSubtitle(text)

@@ -33,6 +33,22 @@ def test_invalid_config_is_rejected(raw):
         config_from_dict(raw)
 
 
+def test_continuous_capture_is_on_unless_the_config_switches_it_off(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text('{"fast_capture": false}', encoding="utf-8")
+
+    assert load_config(None).fast_capture is True
+    assert load_config(path).fast_capture is False
+
+
+def test_row_reading_is_on_unless_the_config_switches_it_off(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text('{"row_reading": false}', encoding="utf-8")
+
+    assert load_config(None).row_reading is True
+    assert load_config(path).row_reading is False
+
+
 def test_overrides_ignore_none_values():
     config = with_overrides(AppConfig(), device_index=None, translator="google")
     assert config.device_index == 0
@@ -75,3 +91,16 @@ def test_blend_returns_new_frame_and_leaves_input_untouched():
     result = blend(frame, rendered, 10, 10)
     assert frame.min() == 255
     assert result[10:10 + rendered.height, 10:10 + rendered.width].mean() < 255
+
+
+def test_short_line_in_a_dark_scene_still_counts_as_bright_text():
+    # Valós eset: az „It's me.” a feliratsáv ~0,1%-a; a régi küszöbbel be sem olvastuk
+    band = np.zeros((216, 1459, 3), np.uint8)
+    band[100:112, 700:726] = 255  # kb. 300 fehér pixel
+    assert has_bright_text(band)
+
+
+def test_dim_tv_subtitle_counts_as_bright_text():
+    band = np.zeros((216, 1459, 3), np.uint8)
+    band[100:112, 600:800] = 183
+    assert has_bright_text(band)

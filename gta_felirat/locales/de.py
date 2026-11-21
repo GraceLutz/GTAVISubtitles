@@ -1,0 +1,152 @@
+"""German UI texts (keys: see en.py)."""
+
+MESSAGES: dict[str, str] = {
+    # Settings window
+    "settings.title": "Einstellungen des Untertitel-Panels",
+    "settings.ui_language": "Programmsprache",
+    "settings.ui_language_auto": "Automatisch (Windows-Sprache)",
+    "settings.target_language": "Zielsprache",
+    "settings.custom_code_hint": "(oder Sprachcode + Enter, z. B. lt)",
+    "settings.translator": "Übersetzer",
+    "settings.api_key": "API-Schlüssel",
+    "settings.save": "Speichern",
+    "settings.delete": "Löschen",
+    "settings.ai_model": "KI-Modell",
+    "settings.font_size": "Schriftgröße",
+    "settings.background_opacity": "Hintergrund-Deckkraft %",
+    "settings.hide_original": "Englischen Untertitel abdecken",
+    "settings.reset_position": "Panel zurück zum englischen Untertitel",
+    "settings.panel_hint": ("Im Spielfenster ziehst du das Panel mit der Maus, mit dem Mausrad änderst du "
+                            "die Größe, Rechtsklick setzt es zurück. {preview_hint}"),
+    "settings.preview_hint_checkbox": "Das Kästchen unten zeigt einen Beispieltext.",
+    "settings.preview_hint_key": "Drück r für einen Beispieltext.",
+    "settings.preview": "Beispieltext und überwachten Bereich anzeigen (zum Einrichten)",
+    "settings.only_spoken": "Nur gesprochene Zeilen („Name: Text“-Zeilen)",
+    "settings.thin_font": "Dünne Schrift (wie in GTA)",
+    "settings.visible_in_recordings": "In Aufnahmen und Streams anzeigen (Medal, OBS, Twitch, Kick, YouTube)",
+    "settings.key_not_needed": "Kein Schlüssel nötig",
+    "settings.key_auto": "Wählt aus deinen vorhandenen Schlüsseln",
+    "settings.key_saved": "✓ Schlüssel gespeichert (Windows-Anmeldeinformationsverwaltung)",
+    "settings.key_session": "✓ Schlüssel verfügbar (für diese Sitzung)",
+    "settings.key_missing": ("Kein Schlüssel: Gib ihn oben ein oder setze die Umgebungsvariable "
+                             "{variable}"),
+    # Translator names
+    "translator.auto": "Automatisch",
+    "translator.google": "Google (kostenlos)",
+    # Subtitle panel
+    "layer.preview_text": ("Untertitel-Panel – mit der Maus ziehen, mit dem Mausrad skalieren, "
+                           "Rechtsklick: Ausgangsposition"),
+    # Command line and console
+    "cli.description": "Übersetztes Untertitel-Panel für Capture-Karte oder PS Remote Play",
+    "cli.help_config": "Einstellungsdatei (config.json)",
+    "cli.help_device": "Nummer der Capture-Karte (siehe --list-devices)",
+    "cli.help_remote_play": "Untertitel über dem PS-Remote-Play-Fenster anzeigen (keine Capture-Karte nötig)",
+    "cli.help_window": "Titel eines anderen Fensters statt Remote Play, z. B. Xbox",
+    "cli.help_webcam": "Webcam-Nummer: dein Kamerabild kommt in die Ecke",
+    "cli.help_translator": "Übersetzungsdienst",
+    "cli.help_lang": "Zielsprachcode, z. B. hu, de, es, pl",
+    "cli.help_no_panel": "ohne Einstellungsfenster starten",
+    "cli.help_windowed": "im Fenster statt im Vollbild starten",
+    "cli.help_list_devices": "verfügbare Videogeräte auflisten",
+    "cli.help_image": "Test: Screenshot statt Capture-Karte verwenden",
+    "cli.config_create_failed": ("Warnung: {path} konnte nicht erstellt werden, starte mit "
+                                 "Standardeinstellungen: {err}"),
+    "cli.no_devices": "Kein Videogerät gefunden. Ist die Capture-Karte angeschlossen?",
+    "cli.image_unreadable": "Bild kann nicht gelesen werden: {path}",
+    "cli.error": "Fehler: {err}",
+    "cli.remote_play_mode": "Remote-Play-Modus: Die Untertitel erscheinen über dem Fenster „{title}“.",
+    "cli.remote_play_hint": ("Untertitel-Panel: mit der linken Maustaste ziehen, mit dem Mausrad skalieren, "
+                             "Rechtsklick: zurück zur Ausgangsposition. Klick danach wieder ins "
+                             "Remote-Play-Fenster. Zum Beenden das Einstellungsfenster schließen."),
+    "cli.keys": ("Tasten: q/Esc Beenden · p Einstellungen · f Vollbild · h Original abdecken · "
+                 "r Position des Untertitel-Panels · o Untertitel an/aus · c Webcam an/aus"),
+    "cli.panel_hint": ("Untertitel-Panel: mit der linken Maustaste ziehen, mit dem Mausrad skalieren, "
+                       "Rechtsklick: zurück zur Ausgangsposition"),
+    "cli.press_enter": "Drück Enter zum Schließen...",
+    # Running app
+    "app.invalid_setting": "Ungültige Einstellung: {err}",
+    "app.save_failed": "Einstellung konnte nicht gespeichert werden: {err}",
+    "app.key_vault_unavailable": "Schlüssel speichern ist nicht verfügbar: {err}",
+    "app.webcam_disabled": "Webcam ausgeschaltet: {err}",
+    # Settings file (config.json)
+    "config.region_range": "subtitle_region-Werte müssen zwischen 0.0 und 1.0 liegen",
+    "config.region_order": "subtitle_region: left < right und top < bottom sind erforderlich",
+    "config.translator_choice": "translator muss einer der folgenden Werte sein: {choices}",
+    "config.device_negative": "device_index darf nicht negativ sein",
+    "config.stable_reads_min": "stable_reads muss mindestens 1 sein",
+    "config.similarity_range": "similarity_threshold muss zwischen 0 und 1 liegen",
+    "config.timing_range": "ocr_interval_seconds muss > 0 und hold_seconds >= 0 sein",
+    "config.min_score_range": "min_text_score muss zwischen 0 und 1 liegen",
+    "config.ui_language_choice": "ui_language: \"auto\" oder einer der folgenden Werte: {choices}",
+    "config.target_lang_empty": "target_lang darf nicht leer sein",
+    "config.font_size_range": "font_size_ratio muss zwischen {minimum} und {maximum} liegen",
+    "config.opacity_range": "panel_opacity muss zwischen 0 und 255 liegen",
+    "config.speaker_color_format": "speaker_color muss eine \"#RRGGBB\"-Farbe sein, z. B. \"#7ECFD6\"",
+    "config.subtitle_xy_pair": "subtitle_x und subtitle_y müssen beide null oder beide Zahlen sein",
+    "config.subtitle_xy_range": "subtitle_x und subtitle_y müssen zwischen 0.0 und 1.0 liegen",
+    "config.webcam_xy_range": "webcam_x und webcam_y müssen zwischen 0.0 und 1.0 liegen",
+    "config.webcam_width_range": "webcam_width_ratio muss zwischen {minimum} und {maximum} liegen",
+    "config.webcam_device_negative": "webcam_device_index darf nicht negativ sein",
+    "config.webcam_same_device": "Webcam und Capture-Karte können nicht dieselbe Gerätenummer verwenden",
+    "config.unknown_settings": "Unbekannte Einstellung(en): {names}",
+    "config.region_not_object": "subtitle_region muss ein Objekt sein (left, top, right, bottom)",
+    "config.region_invalid": "subtitle_region ist ungültig: {err}",
+    "config.invalid_json": "{path} ist kein gültiges JSON: {err}",
+    "config.root_not_object": "Die oberste Ebene von {path} muss ein Objekt sein",
+    "config.unknown_setting_save": "Unbekannte Einstellung(en) können nicht gespeichert werden: {names}",
+    "config.invalid_json_not_saved": "{path} ist kein gültiges JSON, wird nicht überschrieben: {err}",
+    # Capture card and window capture
+    "capture.device_open_failed": "Videogerät {index} kann nicht geöffnet werden",
+    "capture.no_signal": "Die Capture-Karte liefert kein Bild (Kabel / Gerät?)",
+    "capture.read_failed": "Frame konnte {count}-mal hintereinander nicht gelesen werden",
+    "capture.window_not_found": ("Fenster „{title}“ nicht gefunden. Läuft es und ist es mit der "
+                                 "Konsole verbunden?"),
+    "capture.window_fallback": ("Fensterinhalt kann nicht erfasst werden ({reason}): Es wird stattdessen vom "
+                                "Bildschirm gelesen, daher kann der englische Untertitel nicht abgedeckt "
+                                "werden, wenn das Overlay in Aufnahmen sichtbar ist"),
+    "capture.printwindow_failed": "PrintWindow funktioniert bei diesem Fenster nicht",
+    "capture.window_black": "der Fensterinhalt wird schwarz erfasst",
+    # Remote Play overlay
+    "overlay.capture_affinity_failed": ("Konnte nicht festlegen, ob das Overlay in Aufnahmen erscheint "
+                                        "(erfordert Windows 10 2004+)"),
+    "remote.ctrl_c_quit": "Ctrl+C: wird beendet",
+    "remote.layer_error": "Fehler im Remote-Play-Overlay",
+    "remote.window_closed": "Das Remote-Play-Fenster wurde geschlossen, wird beendet",
+    "remote.band_covered": "Ein anderes Fenster verdeckt die Untertitelleiste, Lesen pausiert",
+    "remote.band_visible": "Die Untertitelleiste ist wieder sichtbar",
+    "remote.capture_continuous": "Aufnahme der Untertitelleiste: fortlaufend ({source})",
+    "remote.capture_per_read": "Aufnahme der Untertitelleiste: einzeln pro Lesevorgang",
+    "remote.reading_full": "Lesen: jedes Mal die ganze Untertitelleiste",
+    "remote.reading_rows": "Lesen: zeilenweise (nur neue Zeilen werden gelesen)",
+    "remote.rows_failed": "Zeilenweises Lesen fehlgeschlagen ({worker}): ab jetzt wird die ganze Leiste gelesen",
+    # Subtitle processing
+    "pipeline.ocr_error": "OCR-Fehler",
+    "pipeline.translation_timeout": "Keine Übersetzung innerhalb von {seconds:.0f} s, abgebrochen",
+    "pipeline.failed_prefix": "(Übersetzung fehlgeschlagen)",
+    "pipeline.timeout_prefix": "(keine Übersetzung innerhalb von {seconds:.0f} s)",
+    # Translation
+    "translator.active": "Übersetzer: {translator} → {language}",
+    "translator.missing_key": ("{translator}: API-Schlüssel fehlt ({variable}), gib ihn im "
+                               "Einstellungsfenster ein oder setze die Umgebungsvariable"),
+    "translator.unknown": "Unbekannter Übersetzer: {name}",
+    "translator.failed": "Übersetzung fehlgeschlagen: {err}",
+    "translator.empty_response": "Der Übersetzer hat eine leere Antwort geliefert",
+    "service.key_used_this_run": "{err}; wird für diese Sitzung trotzdem verwendet",
+    "service.prefetch_failed": "Die Vorab-Übersetzung ist fehlgeschlagen, neuer Versuch",
+    "service.no_translator": "Kein Übersetzer eingerichtet",
+    "service.last_latency": "letzte Übersetzung {ms} ms",
+    "store.load_failed": "Gespeicherte Übersetzungen können nicht gelesen werden, starte leer: {err}",
+    "store.save_failed": "Übersetzung konnte nicht auf der Festplatte gespeichert werden: {err}",
+    # Translation services
+    "backend.network_error": "Netzwerkfehler: {error_type}",
+    "backend.bad_key": "Ungültiger oder abgelaufener API-Schlüssel",
+    "backend.http_error": "Der Dienst hat einen Fehler zurückgegeben (HTTP {status})",
+    "backend.overloaded": "Der Dienst ist überlastet, versuch es später noch mal",
+    "backend.deepl_unsupported": "DeepL übersetzt nicht in diese Sprache: {language}",
+    "backend.unexpected_response": "{service} hat eine unerwartete Antwort geliefert",
+    # Saved API keys (Windows Credential Manager)
+    "vault.credential_comment": "API-Schlüssel des GTA-Untertitelübersetzers",
+    "vault.load_failed": "Der {name}-Schlüssel konnte nicht gelesen werden (Windows-Fehler {code})",
+    "vault.save_failed": "Der {name}-Schlüssel konnte nicht gespeichert werden (Windows-Fehler {code})",
+    "vault.delete_failed": "Der {name}-Schlüssel konnte nicht gelöscht werden (Windows-Fehler {code})",
+}

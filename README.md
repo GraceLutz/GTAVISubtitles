@@ -1,314 +1,336 @@
-# GTA felirat – fordított feliratpanel capture cardhoz és PS Remote Playhez
+# GTA Subtitles – translated subtitle panel for capture cards and PS Remote Play
 
-A konzol (PS5 / Xbox) képét capture carddal a PC-re hozza, kiolvassa az angol
-feliratot, lefordítja **bármelyik nyelvre** (DeepL, Claude, ChatGPT vagy Google),
-és egy állítható feliratpanelen mutatja. **A konzolhoz és a játékhoz nem nyúl**,
-ezért kitiltást nem kockáztat.
+🇬🇧 English · 🇭🇺 [Magyar](README.hu.md)
+
+Brings your console's (PS5 / Xbox) picture to the PC through a capture card, reads the
+English subtitles, translates them into **any language** (DeepL, Claude, ChatGPT or
+Google) and shows them on an adjustable subtitle panel. **It never touches the console
+or the game**, so there is no risk of a ban.
 
 ```
-Konzol ──HDMI──▶ Capture card ──USB──▶ PC: OCR → fordítás → feliratpanel
-                     └─HDMI passthrough──▶ TV (opcionális)
+Console ──HDMI──▶ Capture card ──USB──▶ PC: OCR → translation → subtitle panel
+                     └─HDMI passthrough──▶ TV (optional)
 
-PS5 ──hálózat──▶ PS Remote Play ablak a PC-n ◀── átlátszó feliratréteg fölötte
+PS5 ──network──▶ PS Remote Play window on the PC ◀── transparent subtitle layer on top
 ```
 
-Capture card nélkül is működik: **PS Remote Play módban** a program a Remote Play
-ablak fölé tesz egy átlátszó réteget, lásd [PS Remote Play mód](#ps-remote-play-mód).
+It also works without a capture card: in **PS Remote Play mode** the program puts a
+transparent layer over the Remote Play window, see [PS Remote Play mode](#ps-remote-play-mode).
 
-## Letöltés streamereknek
+## Download for streamers
 
-Python, telepítés és kicsomagolás nélkül, egy kattintással:
+No Python, no installation, no unzipping, just one click:
 
-**[⬇ GTA6Felirat.exe letöltése](https://github.com/GraceLutz/GTAVISubtitles/releases/latest/download/GTA6Felirat.exe)**
-(vagy a [Releases](https://github.com/GraceLutz/GTAVISubtitles/releases) oldalról)
+**[⬇ Download GTA6Felirat.exe](https://github.com/GraceLutz/GTAVISubtitles/releases/latest/download/GTA6Felirat.exe)**
+(or from the [Releases](https://github.com/GraceLutz/GTAVISubtitles/releases) page)
 
-1. Tedd az exe-t egy saját mappába (pl. `C:\GTA6Felirat`), mert első indításkor
-   maga mellé teszi a `config.json`-t.
-2. Indítsd el a PS Remote Playt, és csatlakozz a konzolhoz.
-3. Dupla kattintás a `GTA6Felirat.exe`-re. Alapból Remote Play módban indul; a
-   felirat a Medal/OBS monitorfelvételen és a streamen is látszik. Az indulás
-   10–20 másodperc, mert az exe minden induláskor kicsomagolja magát.
-4. Ha a SmartScreen figyelmeztet: *További információ → Futtatás mindenképp*
-   (az exe nincs digitálisan aláírva).
+1. Put the exe in its own folder (e.g. `C:\GTA6Felirat`), because on first start it
+   creates its `config.json` next to itself.
+2. Start PS Remote Play and connect to your console.
+3. Double-click `GTA6Felirat.exe`. It starts in Remote Play mode by default; the
+   subtitles also show up in Medal/OBS monitor recordings and on stream. Startup takes
+   10–20 seconds, because the exe unpacks itself every time it starts.
+4. If SmartScreen warns you: *More info → Run anyway*
+   (the exe is not digitally signed).
 
-Gyorsabban induló, mappás változat:
+Faster-starting folder version:
 [GTA6Felirat-win64.zip](https://github.com/GraceLutz/GTAVISubtitles/releases/latest/download/GTA6Felirat-win64.zip)
-(kicsomagolás után a `GTA6Felirat\GTA6Felirat.exe`-t indítsd).
+(after unzipping, run `GTA6Felirat\GTA6Felirat.exe`; the `README.txt` next to it is a
+short guide).
 
-Az API-kulcsot a beállítóablakban kell megadni; a Windows Hitelesítőadat-kezelője
-tárolja, nem kerül a mappába. A `config.json` az exe mellett van. Az összes
-[kapcsoló](#parancssori-kapcsolók) működik, pl. `GTA6Felirat.exe --lang de` vagy
-capture carddal `GTA6Felirat.exe --device 1`.
+Enter the API key in the settings window; it is stored in Windows Credential Manager,
+not in the folder. The `config.json` sits next to the exe. All
+[command-line options](#command-line-options) work, e.g. `GTA6Felirat.exe --lang de`, or
+with a capture card `GTA6Felirat.exe --device 1`.
 
-A csomag elkészítése (fejlesztőknek, a `.venv` már létezzen):
+**Program language:** choose it at the top of the settings window (🌐 *Program
+language*). *Automatic* follows the Windows display language; available: English,
+Magyar, Deutsch, Español, Français, Polski, Português. The target language of the
+subtitles is set separately, and there are many more of those.
+
+Building the packages (for developers, the `.venv` must already exist):
 
 ```powershell
 .\build_exe.ps1
 ```
 
-Eredmény: `dist\GTA6Felirat.exe` (egyfájlos), valamint `dist\GTA6Felirat\` és
-`dist\GTA6Felirat-win64.zip` (mappás).
+Output: `dist\GTA6Felirat.exe` (single file), plus `dist\GTA6Felirat\` and
+`dist\GTA6Felirat-win64.zip` (folder version).
 
-## Amire szükség van
+## Requirements
 
-| Mi | Megjegyzés |
+| What | Notes |
 |---|---|
 | Windows 10/11 PC, Python 3.11+ | `py --version` |
-| Capture card | pl. Elgato HD60 X, AVerMedia Live Gamer, olcsó USB 3 HDMI-kártya |
-| Feliratok bekapcsolva a játékban | **Beállítások → Kijelző/Hang → Feliratok: Be** |
-| Egy fordító API-kulcsa (ajánlott) | lásd [Fordítók](#fordítók) |
+| Capture card | e.g. Elgato HD60 X, AVerMedia Live Gamer, a cheap USB 3 HDMI card |
+| Subtitles turned on in the game | **Settings → Display/Audio → Subtitles: On** |
+| An API key for a translator (recommended) | see [Translators](#translators) |
 
-**A HDCP-t ki kell kapcsolni PS5-ön**, különben a capture card fekete képet kap:
-*Beállítások → Rendszer → HDMI → HDCP engedélyezése: Ki.* (Xbox-on játék közben
-nincs HDCP, ott nem kell semmit állítani.)
+**HDCP must be turned off on PS5**, otherwise the capture card only gets a black
+picture: *Settings → System → HDMI → Enable HDCP: Off.* (Xbox has no HDCP during
+gameplay, so nothing to change there.)
 
-## Telepítés és indítás
+## Installation and launch
 
-1. Tedd a mappát **rövid elérési útra**, pl. `C:\gta_felirat`. Nagyon hosszú
-   útvonalon a Windows nem tudja betölteni az OCR egyik DLL-jét.
-2. PowerShellben, a mappában:
+1. Put the folder on a **short path**, e.g. `C:\gta_felirat`. On a very long path
+   Windows cannot load one of the OCR DLLs.
+2. In PowerShell, inside the folder:
 
 ```powershell
 .\inditas.ps1 --list-devices
 ```
 
-Az első indítás telepít mindent (pár perc), utána kiírja a videóeszközöket,
-pl. `1: 1920x1080`. Ez a capture card sorszáma.
+The first run installs everything (a few minutes), then lists the video devices,
+e.g. `1: 1920x1080`. That number is your capture card.
 
 ```powershell
 .\inditas.ps1 --device 1
 ```
 
-Elindul a játékablak és mellette a **beállítóablak**. Ha a PowerShell nem engedi
-futtatni a szkriptet:
+The game window opens, with the **settings window** next to it. If PowerShell refuses
+to run the script:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\inditas.ps1 --device 1
 ```
 
-## PS Remote Play mód
+## PS Remote Play mode
 
-Nem kell capture card és HDCP-állítás sem. Indítsd el a PS Remote Playt, csatlakozz
-a PS5-höz, kapcsold be a feliratokat a játékban, majd:
+No capture card and no HDCP change needed. Start PS Remote Play, connect to your PS5,
+turn on subtitles in the game, then:
 
 ```powershell
 .\inditas.ps1 --remote-play
 ```
 
-- A fordított felirat egy **átlátszó, mindig felül lévő rétegen** jelenik meg a Remote
-  Play ablak fölött, és követi az ablakot (mozgatás, átméretezés, teljes képernyő).
-- A **kontroller a Remote Playben marad**: a rétegre kattintás nem veszi el a fókuszt,
-  az átlátszó részeken pedig a kattintás átmegy a Remote Playhez.
-- A panelt itt is **húzhatod, görgővel méretezheted, jobb klikkel visszaáll**.
-- A beállítóablakban a *„Mintaszöveg és a figyelt sáv mutatása”* jelölőnégyzet
-  mutatja, hol keresi a program az angol feliratot.
-- **Kilépés:** zárd be a beállítóablakot. Ha a Remote Playt zárod be, a program is kilép.
-- A magyar felirat alapból **látszik a felvételeken és streamen** (lásd lent). A program
-  közvetlenül a Remote Play ablak tartalmát olvassa (a fölötte lévő réteg nélkül), így
-  mindig az eredeti angol feliratot látja, akkor is, ha a réteg letakarja.
-- Az **angol felirat eltakarása** bekapcsolva (`h` gomb vagy a beállítóablak) az angol
-  szöveg helyére a játékkép elmosott, kissé sötétített, lágy szélű változata kerül, rajta a
-  fordítással. Ez a felvételen és a streamen is így látszik.
+- The translated subtitle appears on a **transparent, always-on-top layer** over the
+  Remote Play window, and follows the window (moving, resizing, full screen).
+- **The controller stays in Remote Play**: clicking the layer does not steal focus, and
+  clicks on the transparent parts go through to Remote Play.
+- Here too you can **drag the panel, resize it with the wheel, and right-click to reset it**.
+- In the settings window, the *“Show sample text and the watched area (for setup)”*
+  checkbox shows where the program looks for the English subtitle.
+- **To quit:** close the settings window. If you close Remote Play, the program quits too.
+- By default the translated subtitle **shows up in recordings and on stream** (see below).
+  The program reads the Remote Play window's content directly (without the layer on top),
+  so it always sees the original English subtitle, even when the layer covers it.
+- With **covering the English subtitle** turned on (`h` key or the settings window), the
+  English text is replaced by a blurred, slightly darkened, soft-edged version of the game
+  picture, with the translation on top. Recordings and streams show it the same way.
 
-### Felvétel és stream (Medal, OBS → Twitch, Kick, YouTube)
+### Recording and streaming (Medal, OBS → Twitch, Kick, YouTube)
 
-A feliratréteg egy külön ablak a Remote Play fölött, ezért a rögzítőprogramban a
-**monitort** kell felvenni, ne csak a Remote Play ablakot vagy játékot:
+The subtitle layer is a separate window over Remote Play, so your recording software has
+to capture the **monitor**, not just the Remote Play window or the game:
 
-| Program | Beállítás |
+| Program | Setting |
 |---|---|
-| **Medal** | Capture mode: *Monitor / Full screen* azon a monitoron, ahol a Remote Play fut |
-| **OBS** (Twitch, Kick, YouTube) | Forrás: *Képernyő-felvétel* (Display Capture) a kijelölt monitorra |
-| **Xbox Game Bar, NVIDIA ShadowPlay** | teljes asztal / monitor rögzítése |
+| **Medal** | Capture mode: *Monitor / Full screen* on the monitor where Remote Play runs |
+| **OBS** (Twitch, Kick, YouTube) | Source: *Display Capture* on that monitor |
+| **Xbox Game Bar, NVIDIA ShadowPlay** | record the full desktop / monitor |
 
-A panel „Látszódjon a felvételen és streamen” kapcsolójával ki is kapcsolhatod: ekkor a
-felirat csak neked látszik, a felvételen nem (Windows 10 2004 vagy újabb kell hozzá).
-Ha a Remote Play ablak tartalma valamiért nem rögzíthető (a program ilyenkor figyelmeztet
-és a képernyőről olvas tovább), felvételre látszó módban az „angol felirat eltakarása” nem
-érvényes: a fordítás az angol alá kerül, mert a takarást az OCR is látná.
+You can turn this off with the panel's “Show in recordings and streams (Medal, OBS,
+Twitch, Kick, YouTube)” switch: the subtitle is then visible only to you, not in the
+recording (requires Windows 10 2004 or later). If the Remote Play window's content cannot
+be captured for some reason (the program warns you and keeps reading from the screen),
+“Cover the English subtitle” does not apply while the subtitle is visible in recordings:
+the translation goes below the English text instead, because the OCR would see the cover.
 
-**Streamereknek:** a program a GitHubról letölthető, a telepítés lépései fent vannak. Mindenki a
-saját fordítókulcsát adja meg a panelen (DeepL ingyenes kulcs is elég).
+**For streamers:** the program can be downloaded from GitHub; the setup steps are above.
+Everyone enters their own translator key in the panel (a free DeepL key is enough).
 
-Más ablak fölé is teheted (pl. Xbox alkalmazás, böngészős felhőjáték), az ablak
-pontos címével:
+You can also put it over another window (e.g. the Xbox app, a cloud game in the browser),
+using the window's exact title:
 
 ```powershell
 .\inditas.ps1 --window "Xbox"
 ```
 
-Mért értékek egy 1920×1080-as Remote Play ablakon: képrögzítés ~36 ms, OCR felirat
-nélkül ~8 ms, felirattal ~75–120 ms. A teljes késést a [fordító](#mekkora-a-késés)
-határozza meg. A Remote Play saját képkésése (kb. 50–150 ms) ehhez nem adódik
-hozzá, mert a felirat ugyanahhoz a képhez igazodik.
+Measured on a 1920×1080 Remote Play window: frame capture ~36 ms, OCR without subtitles
+~8 ms, with subtitles ~75–120 ms. The total delay is mostly down to the
+[translator](#how-long-is-the-delay). Remote Play's own video latency (about 50–150 ms)
+does not add to this, because the subtitle is matched to the same frame.
 
-## A feliratpanel
+## The subtitle panel
 
-**A játékablakban, egérrel:**
+**In the game window, with the mouse:**
 
-| Mozdulat | Hatás |
+| Action | Effect |
 |---|---|
-| Bal gombbal húzod | a panel oda kerül, ahová teszed (elmentődik) |
-| Görgő a panel fölött | nagyobb vagy kisebb betű |
-| Jobb klikk a panelen | vissza az angol felirat helyére |
-| `r` gomb | mintaszöveg, ha épp nincs felirat (így be tudod állítani) |
+| Drag with the left button | the panel goes where you drop it (saved) |
+| Wheel over the panel | bigger or smaller text |
+| Right-click the panel | back to the English subtitle's position |
+| `r` key | sample text when there is no subtitle (so you can set it up) |
 
-Ha az angol felirat eltakarása be van kapcsolva, az eredeti angol szöveget a játékkép
-elmosott, lágy szélű változata takarja, akkor is, ha a panelt máshová húzod
-(a `h` gombbal kikapcsolható).
+When covering the English subtitle is on, the original English text is hidden by a
+blurred, soft-edged version of the game picture, even if you drag the panel elsewhere
+(the `h` key turns it off).
 
-**A beállítóablakban** (a `p` gombbal elrejthető vagy előhozható):
+**In the settings window** (hide or show it with the `p` key):
 
-- **Célnyelv:** 30 nyelv listából, vagy bármelyik nyelvkód beírva + Enter (pl. `lt`, `et`).
-- **Fordító:** Automatikus, DeepL, Claude, ChatGPT vagy Google.
-- **API-kulcs:** a **Mentés** gomb a Windows Hitelesítőadat-kezelőjébe menti (titkosítva, a
-  felhasználói fiókodhoz kötve), így a következő indításkor nem kell újra beírni. A **Törlés**
-  gomb eltávolítja. A kulcs soha nem kerül a `config.json`-ba vagy a repóba.
-- **AI modell:** Claude-nál vagy GPT-nél átírható, Enterrel érvényes.
-- **Betűméret, háttér fedése:** csúszkák, azonnal látszik a hatásuk.
-- **Angol felirat eltakarása**, valamint **panel vissza az eredeti helyre**.
-- **Vékony betű (mint a GTA-ban):** a beszélő neve türkiz, a szöveg fehér, halvány árnyékkal.
-- **Csak a kimondott szöveg:** csak a „Név: szöveg” párbeszédsorokat fordítja; küldetésszöveg,
-  tábla, menü, telefonhívás-kijelző nem megy fordításra (alapból bekapcsolva).
-- Alul az állapot: melyik fordító fut, **a mért fordítási idő (ms)**, és ha hiba van, mi a gond.
+- **🌐 Program language:** at the top of the window. *Automatic* follows the Windows
+  display language; or pick English, Magyar, Deutsch, Español, Français, Polski,
+  Português. This is only the language of the program itself; the subtitle target
+  language is separate and has many more options.
+- **Target language:** pick one of 30 languages from the list, or type any language code
+  + Enter (e.g. `lt`, `et`).
+- **Translator:** Automatic, DeepL, Claude, ChatGPT or Google (free).
+- **API key:** the **Save** button stores it in Windows Credential Manager (encrypted, tied
+  to your user account), so you don't have to type it again next time. The **Delete**
+  button removes it. The key never goes into `config.json` or the repository.
+- **AI model:** can be changed for Claude or GPT, applied with Enter.
+- **Font size, Background opacity %:** sliders, the effect is visible immediately.
+- **Cover the English subtitle**, and **Move the panel back to the English subtitle**.
+- **Thin font (like in GTA):** the speaker's name in turquoise, the text in white, with a
+  faint shadow.
+- **Spoken lines only (“Name: text” lines):** only translates “Name: text” dialogue
+  lines; mission text, signs, menus and the phone-call display are not translated (on by
+  default).
+- At the bottom, the status: which translator is running, **the measured translation time
+  (ms)**, and if something is wrong, what the problem is.
 
-Minden módosítás azonnal érvényes, és bekerül a `config.json`-ba (a kulcsok kivételével).
+Every change takes effect immediately and is saved to `config.json` (except the keys).
 
-## Fordítók
+## Translators
 
-| Fordító | Sebesség (becsült) | Minőség | Kulcs (környezeti változó) |
+| Translator | Speed (estimated) | Quality | Key (environment variable) |
 |---|---|---|---|
-| **DeepL** | leggyorsabb, kb. 150–400 ms | nagyon jó | `DEEPL_API_KEY` – a *DeepL API Free* havi 500 000 karakterig ingyenes |
-| **Claude** (Haiku) | kb. 400–900 ms | a legtermészetesebb, érti a szlenget és az előző sorokat | `ANTHROPIC_API_KEY` – console.anthropic.com |
-| **ChatGPT** (GPT mini) | kb. 400–1000 ms | nagyon jó | `OPENAI_API_KEY` – platform.openai.com |
-| **Google** | kb. 100–300 ms | közepes | nem kell kulcs, de néha letiltja a sok kérést |
+| **DeepL** | fastest, about 150–400 ms | very good | `DEEPL_API_KEY` – *DeepL API Free* is free up to 500,000 characters a month |
+| **Claude** (Haiku) | about 400–900 ms | the most natural, understands slang and the previous lines | `ANTHROPIC_API_KEY` – console.anthropic.com |
+| **ChatGPT** (GPT mini) | about 400–1000 ms | very good | `OPENAI_API_KEY` – platform.openai.com |
+| **Google** | about 100–300 ms | average | no key needed, but it sometimes blocks too many requests |
 
-**Fontos:** a Claude Pro és a ChatGPT Plus előfizetés **nem ad API-kulcsot**. Az
-API-t külön kell feltölteni a fenti oldalakon, használat szerint fizetős. Egy
-végigjátszás feliratai jellemzően pár dollárba kerülnek.
+**Important:** a Claude Pro or ChatGPT Plus subscription **does not give you an API
+key**. The API has to be topped up separately on the pages above and is paid per use.
+The subtitles of a full playthrough typically cost a few dollars.
 
-Kulcs tartós beállítása a panel **Mentés** gombja helyett környezeti változóval
-(utána nyiss új PowerShell-ablakot):
+To set a key permanently with an environment variable instead of the panel's **Save**
+button (open a new PowerShell window afterwards):
 
 ```powershell
-setx DEEPL_API_KEY "ide-a-kulcsod"
+setx DEEPL_API_KEY "your-key-here"
 ```
 
-Az **Automatikus** mód ebben a sorrendben választ abból, amihez van kulcs:
-DeepL → Claude → ChatGPT → Google. Az AI-fordítók az előző 3 sort is megkapják,
-így a nemeket, a megszólítást és a hangnemet jobban eltalálják. Ha a fordítás nem
-sikerül, az angol szöveg jelenik meg „(fordítás nem sikerült)” előtaggal.
+**Automatic** mode picks, in this order, the first one you have a key for:
+DeepL → Claude → ChatGPT → Google. The AI translators also get the previous 3 lines,
+so they get gender, forms of address and tone right more often. If a translation fails,
+the English text is shown with a prefix saying the translation failed.
 
-### Mekkora a késés?
+### How long is the delay?
 
-Mért idő a felirat megjelenésétől a lefordított szövegig (300 ms-os, illetve
-700 ms-os fordítást szimulálva, ugyanezen a gépen):
+Measured time from the subtitle appearing to the translated text (simulating a 300 ms
+and a 700 ms translation, on the same machine):
 
-| Fordítási idő | Átlagos teljes késés |
+| Translation time | Average total delay |
 |---|---|
-| ~300 ms (DeepL-szerű) | **kb. 0,5 mp** (0,44–0,6) |
-| ~700 ms (Claude/GPT-szerű) | **kb. 0,9 mp** (0,82–1,09) |
-| ismétlődő mondat | csak az OCR, kb. 0,1–0,25 mp |
+| ~300 ms (DeepL-like) | **about 0.5 s** (0.44–0.6) |
+| ~700 ms (Claude/GPT-like) | **about 0.9 s** (0.82–1.09) |
+| repeated line | OCR only, about 0.1–0.25 s |
 
-Amitől ilyen gyors:
+What makes it this fast:
 
-- A fordítás **már az első olvasásnál elindul**, a megerősítést nem várja meg. Ha
-  a második olvasás ugyanazt adja, a kész fordítás azonnal megjelenik.
-- A fordítóval **nyitva tartott kapcsolat** marad, így nem kell minden mondatnál
-  új HTTPS-kézfogás (a fenti mérésben ez még nincs benne, élesben tovább gyorsít).
-- 0,15 mp-enként olvas, és egy olvasás kb. 75 ms.
+- Translation **starts on the first read**, without waiting for confirmation. If the
+  second read gives the same text, the finished translation appears immediately.
+- The connection to the translator is **kept open**, so there is no new HTTPS handshake
+  for every line (the measurement above does not include this yet; it is even faster in
+  real use).
+- It reads every 0.15 s, and one read takes about 75 ms.
 
-A beállítóablak alján élesben is látszik a mért fordítási idő.
+The measured translation time is also shown live at the bottom of the settings window.
 
-## Webkamera (nem kötelező)
+## Webcam (optional)
 
-Csak akkor indul, ha megadod: `.\inditas.ps1 --device 1 --webcam 0`. A képet
-egérrel húzhatod, görgővel méretezheted, a `c` gombbal elrejtheted.
+Only starts if you ask for it: `.\inditas.ps1 --device 1 --webcam 0`. You can drag the
+picture with the mouse, resize it with the wheel, and hide it with the `c` key.
 
-## Hang
+## Audio
 
-Az overlay ablak csak képet mutat. A hanghoz válassz egyet:
+The overlay window only shows the picture. For sound, pick one:
 
-- **Windows hangbemenet:** *Gépház → Rendszer → Hang → a capture card bemenete →
-  Tulajdonságok → „Az eszköz hallgatása”*. A legegyszerűbb, de 50-100 ms késést adhat.
-- **Fejhallgató a kontrolleren** (PS5 DualSense / Xbox kontroller jack). Ez késés nélküli.
-- **Passthrough a TV-re** némítva, a hang a TV-ből, a kép a PC-ről.
+- **Windows audio input:** *Settings → System → Sound → the capture card's input →
+  Properties → “Listen to this device”*. The simplest, but it can add 50–100 ms of delay.
+- **Headphones on the controller** (PS5 DualSense / Xbox controller jack). No delay.
+- **Passthrough to the TV**, muted: sound from the TV, picture from the PC.
 
-## Billentyűk a játékablakban
+## Keys in the game window
 
-| Gomb | Funkció |
+| Key | Function |
 |---|---|
-| `q` / `Esc` | kilépés |
-| `p` | beállítóablak elrejtése / előhozása |
-| `f` | teljes képernyő be/ki |
-| `h` | eredeti angol felirat takarása be/ki |
-| `r` | figyelt sáv keretezése + mintaszöveg a panel helyén |
-| `o` | feliratpanel ki/be |
-| `c` | webkamerás kép ki/be |
+| `q` / `Esc` | quit |
+| `p` | hide / show the settings window |
+| `f` | full screen on/off |
+| `h` | cover the original English subtitle on/off |
+| `r` | outline the watched area + sample text in the panel's place |
+| `o` | subtitle panel on/off |
+| `c` | webcam picture on/off |
 
-## Parancssori kapcsolók
+## Command-line options
 
-| Kapcsoló | Jelentés |
+| Option | Meaning |
 |---|---|
-| `--device N` | capture card sorszáma |
-| `--remote-play` | a PS Remote Play ablak fölé teszi a feliratot |
-| `--window "CÍM"` | tetszőleges ablak fölé, pontos ablakcímmel |
-| `--lang KÓD` | célnyelv, pl. `hu`, `de`, `es` |
-| `--translator NÉV` | `auto`, `deepl`, `claude`, `openai`, `google` |
-| `--windowed` | ablakban indul |
-| `--no-panel` | beállítóablak nélkül indul |
-| `--image kép.png` | teszt egy képernyőképpel, capture card nélkül |
-| `--list-devices` | videóeszközök listája |
+| `--device N` | capture card number |
+| `--remote-play` | puts the subtitles over the PS Remote Play window |
+| `--window "TITLE"` | over any window, by its exact title |
+| `--lang CODE` | target language, e.g. `hu`, `de`, `es` |
+| `--translator NAME` | `auto`, `deepl`, `claude`, `openai`, `google` |
+| `--windowed` | starts in a window |
+| `--no-panel` | starts without the settings window |
+| `--image picture.png` | test with a screenshot, without a capture card |
+| `--list-devices` | list video devices |
 
-## Beállítások (`config.json`)
+## Settings (`config.json`)
 
-| Kulcs | Alapérték | Jelentés |
+| Key | Default | Meaning |
 |---|---|---|
-| `device_index` | `0` | capture card sorszáma |
-| `capture_width` / `capture_height` / `capture_fps` | 1920 / 1080 / 60 | kért képméret |
-| `subtitle_region` | 0.12 / 0.78 / 0.88 / 0.98 | ahol a program az angol feliratot keresi |
-| `ocr_interval_seconds` | `0.1` | milyen gyakran olvas (az OCR ~0,1 mp, ennél sűrűbben nem tud) |
-| `min_text_score` | `0.6` | ennél bizonytalanabb OCR-találatot eldob |
-| `stable_reads` | `2` | ennyi egyező olvasás után fordít |
-| `similarity_threshold` | `0.85` | ennyire hasonló szöveget tekint ugyanannak |
-| `hold_seconds` | `0.8` | ennyi ideig marad kint a fordítás az angol eltűnése után |
+| `device_index` | `0` | capture card number |
+| `capture_width` / `capture_height` / `capture_fps` | 1920 / 1080 / 60 | requested picture size |
+| `subtitle_region` | 0.12 / 0.78 / 0.88 / 0.98 | where the program looks for the English subtitle |
+| `ocr_interval_seconds` | `0.1` | how often it reads (OCR takes ~0.1 s, it can't go faster) |
+| `min_text_score` | `0.6` | OCR results less certain than this are dropped |
+| `stable_reads` | `2` | translates after this many matching reads |
+| `similarity_threshold` | `0.85` | text at least this similar counts as the same |
+| `hold_seconds` | `0.8` | how long the translation stays after the English text disappears |
 | `translator` | `"auto"` | `auto`, `deepl`, `claude`, `openai`, `google` |
-| `target_lang` | `"hu"` | célnyelv kódja |
-| `claude_model` | `"claude-haiku-5-5"` | Claude-modell |
-| `openai_model` | `"gpt-4.1-mini"` | GPT-modell |
-| `hide_original` | `true` | az angol szöveg takarása |
-| `visible_in_recordings` | `true` | a felirat látszik a Medal/OBS monitorfelvételen és streamen |
-| `only_spoken_lines` | `true` | csak a „Név: szöveg” párbeszédsorok fordítása |
-| `panel_opacity` | `245` | a panel háttere, 0 (átlátszó) – 255 (teljesen fedő) |
-| `subtitle_x` / `subtitle_y` | `null` | a panel közepe a kép arányában; `null` = az angol felirat helyén |
-| `font_path` | Segoe UI (vékony, GTA-stílus) | bármilyen `.ttf`; a panel „Vékony betű” kapcsolója Segoe UI és Segoe UI Bold között vált |
-| `speaker_color` | `"#7ECFD6"` | a beszélő nevének színe (`#RRGGBB`), mint a GTA-feliratban |
-| `font_size_ratio` | `0.034` | betűméret a képmagasság arányában (0.015–0.08) |
-| `fullscreen` | `true` | teljes képernyőn indul |
+| `target_lang` | `"hu"` | target language code |
+| `ui_language` | `"auto"` | language of the program itself: `"auto"` (Windows display language) or e.g. `"en"`, `"hu"` |
+| `claude_model` | `"claude-haiku-5-5"` | Claude model |
+| `openai_model` | `"gpt-4.1-mini"` | GPT model |
+| `hide_original` | `true` | cover the English text |
+| `visible_in_recordings` | `true` | the subtitle shows up in Medal/OBS monitor recordings and on stream |
+| `only_spoken_lines` | `true` | translate only “Name: text” dialogue lines |
+| `fast_capture` | `true` | Remote Play mode: capture the subtitle band continuously on its own thread (faster cover and reading); set `false` to go back to one capture per read |
+| `row_reading` | `true` | Remote Play mode: read row by row – only a newly appeared subtitle row is read (faster translation, less CPU); needs `fast_capture` and a game picture at least 1600 px wide, otherwise the whole bar is read every time. Set `false` to always read the whole bar |
+| `panel_opacity` | `245` | panel background, 0 (transparent) – 255 (fully opaque) |
+| `subtitle_x` / `subtitle_y` | `null` | panel center as a fraction of the picture; `null` = at the English subtitle |
+| `font_path` | Segoe UI (thin, GTA style) | any `.ttf`; the panel's “Thin font” switch toggles between Segoe UI and Segoe UI Bold |
+| `speaker_color` | `"#7ECFD6"` | color of the speaker's name (`#RRGGBB`), like in GTA's subtitles |
+| `font_size_ratio` | `0.034` | font size as a fraction of the picture height (0.015–0.08) |
+| `fullscreen` | `true` | starts in full screen |
 
-**Kínai, japán, koreai, arab** célnyelvnél a Segoe UI nem tud minden betűt. Állítsd
-a `font_path`-t pl. `C:/Windows/Fonts/msyh.ttc`-re (kínai), `YuGothB.ttc`-re
-(japán), `malgunbd.ttf`-re (koreai).
+For **Chinese, Japanese, Korean or Arabic** target languages, Segoe UI cannot display
+every character. Set `font_path` to e.g. `C:/Windows/Fonts/msyh.ttc` (Chinese),
+`YuGothB.ttc` (Japanese) or `malgunbd.ttf` (Korean).
 
-## Tesztelés capture card nélkül
+## Testing without a capture card
 
 ```powershell
 .\inditas.ps1 --image screenshot.png --windowed
 ```
 
-Fejlesztői tesztek:
+Developer tests:
 
 ```powershell
 .\.venv\Scripts\python -m pip install pytest==9.2.0
 .\.venv\Scripts\python -m pytest tests
 ```
 
-## Korlátok
+## Limitations
 
-- Gépi fordítás: szójátékok és utalások néha furán jönnek át (AI-fordítóval ritkábban).
-- Ha a játék más helyre vagy más színnel írja a feliratot, a `subtitle_region`-t
-  kell igazítani. Fehér szöveghez van hangolva.
-- A beszélő nevét („Jason: …”) nem fordítja, csak a mondatot.
-- Arab nyelvnél a jobbról balra írást a panel nem rendezi át.
-- Remote Play módban a felirat a Remote Play ablakon jelenik meg, a TV-n nem.
-  Ha a PS5 egy jelenetnél letiltja a Remote Play képet, ott a felirat is kimarad.
+- Machine translation: puns and references sometimes come out oddly (less often with an
+  AI translator).
+- If the game draws subtitles in a different place or color, `subtitle_region` has to be
+  adjusted. It is tuned for white text.
+- The speaker's name (“Jason: …”) is not translated, only the sentence.
+- For Arabic, the panel does not reorder text for right-to-left writing.
+- In Remote Play mode the subtitle appears on the Remote Play window, not on the TV.
+  If the PS5 blocks the Remote Play picture in a scene, the subtitle is missing there too.

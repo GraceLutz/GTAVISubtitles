@@ -1,11 +1,15 @@
+import json
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pytest
 
-from gta_felirat import backends, translation_service
+from gta_felirat import backends, translation_service, translation_store
 from gta_felirat.backends import DeepLBackend
 from gta_felirat.config import AppConfig
+from gta_felirat.i18n import t
 from gta_felirat.languages import find_language
 from gta_felirat.ocr import Box, OcrResult
 from gta_felirat.subtitle_pipeline import SubtitlePipeline
@@ -88,6 +92,48 @@ def test_store_drops_oldest_entries_over_the_limit(tmp_path):
 
     reloaded = TranslationStore(tmp_path / "mentett.json", max_entries=2)
     assert [reloaded.get("deepl:hu", w) for w in ("a", "b", "c")] == [None, "B", "C"]
+
+
+def test_saved_file_keeps_its_format_when_several_lines_are_saved_at_once(tmp_path):
+    path = tmp_path / "mentett.json"
+
+    TranslationStore(path).put_many("deepl:hu", {"go!": "Gyerünk!", "wait.": "Várj."})
+
+    assert json.loads(path.read_text(encoding="utf-8")) == {
+        "version": 1, "entries": {"deepl:hu": {"go!": "Gyerünk!", "wait.": "Várj."}}}
+
+
+def test_saved_translation_can_be_read_while_the_file_is_still_being_written(tmp_path, monkeypatch):
+    store = TranslationStore(tmp_path / "mentett.json")
+    writing, may_finish = threading.Event(), threading.Event()
+
+    def slow_replace(_source, _target):
+        writing.set()
+        may_finish.wait(timeout=2)
+
+    monkeypatch.setattr(translation_store.os, "replace", slow_replace)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        writer = pool.submit(store.put_many, "deepl:hu", {"go!": "Gyerünk!"})
+        assert writing.wait(timeout=2)
+        try:
+            read = pool.submit(store.get, "deepl:hu", "go!").result(timeout=1)
+        finally:
+            may_finish.set()
+        writer.result(timeout=2)
+
+    assert read == "Gyerünk!"
+
+
+def test_translations_saved_from_several_threads_all_reach_the_file(tmp_path):
+    path = tmp_path / "mentett.json"
+    store = TranslationStore(path)
+    batches = [{f"line {worker}-{number}": "x" for number in range(20)} for worker in range(4)]
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(lambda batch: store.put_many("deepl:hu", batch), batches))
+
+    reloaded = TranslationStore(path)
+    assert all(reloaded.get("deepl:hu", key) == "x" for batch in batches for key in batch)
 
 
 # --- kapcsolat melegen tartása ------------------------------------------------
@@ -200,7 +246,8 @@ def test_pipeline_gives_up_on_a_translation_after_the_deadline(monkeypatch):
     finally:
         pipeline.shutdown()
 
-    assert pipeline.shown.text.startswith(subtitle_pipeline.TIMEOUT_PREFIX)
+    prefix = t("pipeline.timeout_prefix", seconds=subtitle_pipeline.TRANSLATION_DEADLINE_SECONDS)
+    assert pipeline.shown.text.startswith(prefix)
 
 
 def test_backend_skips_retry_when_the_time_budget_is_used_up(monkeypatch):
@@ -214,10 +261,11 @@ def test_backend_skips_retry_when_the_time_budget_is_used_up(monkeypatch):
 
     monkeypatch.setattr(backends._session, "post", post)
     monkeypatch.setattr(backends.time, "sleep", lambda _s: None)
-    monkeypatch.setattr(backends, "TRANSLATION_BUDGET_SECONDS", 2.5)
+    # Megszakadt kapcsolatnál azonnal újrapróbálunk, de csak ha legalább MIN_RETRY_SECONDS maradt
+    monkeypatch.setattr(backends, "TRANSLATION_BUDGET_SECONDS", 1.5)
 
     with pytest.raises(backends.BackendError):
         DeepLBackend("abc:fx", find_language("hu")).translate("Hello")
 
     assert len(attempts) == 1
-    assert attempts[0] <= 2.5
+    assert attempts[0] <= 1.5
