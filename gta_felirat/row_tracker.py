@@ -26,6 +26,7 @@ from typing import Any
 import numpy as np
 
 from .ocr import Box
+from .speaker_color import SpeakerColors
 
 GONE_GRACE_CAPTURES = 2  # ennyi rögzítésről hiányozhat egy sor (egy-két rossz képkocka), mielőtt eltűntnek vesszük
 SETTLE_SECONDS = 0.3  # ennél fiatalabb sor „cseréje” még ugyanannak a sornak a megjelenése (áttűnés)
@@ -99,6 +100,7 @@ class RowText:
     text: str  # üres, ha nincs olvasható szöveg
     score: float
     provisional: bool = False  # még nem olvastuk: attól a sortól örökölte, amelyiknek pontosan a helyére került
+    speaker_colors: SpeakerColors = ()  # a sor beszélőneveinek mért színe (ha volt név, és mérhető volt)
 
     def is_legible(self, min_score: float) -> bool:
         """Olvasható-e: van szövege, és az OCR elég biztos benne."""

@@ -16,6 +16,7 @@ from .subtitle_tracker import normalize, similarity
 
 if TYPE_CHECKING:
     from .ocr import Box, OcrLine
+    from .overlay import SpeakerColors
 
 MATCH_THRESHOLD = 0.7  # ennyire kell hasonlítania az olvasott sornak a lefordított sor angol eredetijére
 ANCHOR_JITTER_PX = 3  # ennél kisebb elmozdulás OCR-zaj: a szöveg ne remegjen
@@ -127,8 +128,11 @@ def _union(boxes: list[Box]) -> Box:
 
 
 def build_shown(pairs: list[tuple[TranslatedLine, OcrLine]], hidden: list[Box],
-                previous: Shown | None) -> Shown | None:
-    """A kiírandó állapot: fordított sorok a helyükön, plusz a csak eltakart angol sorok."""
+                previous: Shown | None, *, speaker_colors: SpeakerColors = ()) -> Shown | None:
+    """A kiírandó állapot: fordított sorok a helyükön, plusz a csak eltakart angol sorok.
+
+    speaker_colors: a beszélőnevek mintázott színe; ha változik, új Shown készül (újrarajzolás).
+    """
     live_boxes = [live.box for _line, live in pairs] + list(hidden)
     placed = sorted((ShownLine(line.text, _steady_anchor(line.text, live.box, _without(live_boxes, live.box),
                                                          previous))
@@ -137,7 +141,7 @@ def build_shown(pairs: list[tuple[TranslatedLine, OcrLine]], hidden: list[Box],
     if not placed and not hidden_boxes:
         return None
     anchor = _union([line.anchor for line in placed] or list(hidden_boxes))
-    shown = Shown("\n".join(line.text for line in placed), anchor, tuple(placed), hidden_boxes)
+    shown = Shown("\n".join(line.text for line in placed), anchor, tuple(placed), hidden_boxes, speaker_colors)
     return previous if shown == previous else shown
 
 

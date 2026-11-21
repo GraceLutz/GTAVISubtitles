@@ -64,6 +64,7 @@ class _Ink:
     columns: Span
     pixels: int
     trimmed: bool
+    named: bool = False  # a színes beszélőnévre is kiterjedt
 
 
 def seed_parts(window_core: np.ndarray, measures: Measures) -> list[Span]:
@@ -84,12 +85,17 @@ def seed_parts(window_core: np.ndarray, measures: Measures) -> list[Span]:
     return [part for part in parts if _may_hold_dialogue(part, window_core.shape[0], measures)]
 
 
-def find_rows(core: np.ndarray, parts: list[Span], measures: Measures, dim: bool) -> tuple[Row, ...]:
-    """A jelöltekből kimért sorok fentről lefelé; core: a sáv betűmag-maszkja (a jelöltek környékén pontos)."""
+def find_rows(core: np.ndarray, parts: list[Span], measures: Measures, dim: bool,
+              named: np.ndarray | None = None) -> tuple[Row, ...]:
+    """A jelöltekből kimért sorok fentről lefelé; core: a sáv betűmag-maszkja (a jelöltek környékén pontos).
+
+    named: a core a színes (beszélőnév) betűmagokkal kiegészítve; a sor oldalra kiterjedhet rájuk.
+    """
     rows: list[Row] = []
     for part in parts:
-        ink = _ink_of(core, part, measures)
-        row = _judge(core, ink, measures, dim) if ink is not None else None
+        ink = _ink_of(core, part, measures, named)
+        judged = named if ink is not None and ink.named else core
+        row = _judge(judged, ink, measures, dim) if ink is not None else None
         if row is not None and _is_dialogue_row(row, measures.dialogue_bottom):
             rows.append(row)
     return _drop_overlaps(rows)
@@ -192,7 +198,30 @@ def _symmetric_trim(column_ink: np.ndarray, extent: Span, center: float, slack: 
     return (first + int(inked[0]), right) if inked.size else None
 
 
-def _ink_of(core: np.ndarray, part: Span, measures: Measures) -> _Ink | None:
+def _with_name(named: np.ndarray, white_ink: np.ndarray, lines: Span, extent: Span,
+               measures: Measures) -> Span | None:
+    """A fehér kiterjedés a hozzá tapadó színes névvel, ha a sor így közelebb kerül a kép közepéhez.
+
+    A valódi névvel a teljes sor középre igazított; a mellé ragadt színes háttérfolt épp elhúzza a középtől.
+    A név után mindig fehér szöveg jön: a sor jobb vége fehér betű (a sor közepén álló név fölött átérünk
+    a következő beszélő szövegéig), a jobbra tapadó színes folt (bőr, háttér) nem tartozik a sorhoz.
+    white_ink: a fehér betűmag oszloponkénti mennyisége a sor képsoraiban.
+    """
+    params = measures.params
+    wider = _central_group(_column_ink(named, lines), extent, measures.px(params.max_gap))
+    if (wider is None or wider[0] > extent[0] or wider[1] < extent[1]
+            or wider[1] - wider[0] < measures.px(params.named_min_width)):
+        return None
+    white_after = np.flatnonzero(white_ink[extent[1]:wider[1]])
+    wider = (wider[0], extent[1] + int(white_after[-1]) + 1 if white_after.size else extent[1])
+    if wider == extent:
+        return None
+    before = abs((extent[0] + extent[1]) / 2.0 - measures.center)
+    after = abs((wider[0] + wider[1]) / 2.0 - measures.center)
+    return wider if after + params.sure_offset * measures.scale < before else None
+
+
+def _ink_of(core: np.ndarray, part: Span, measures: Measures, named: np.ndarray | None = None) -> _Ink | None:
     """A jelölt sorának festett kiterjedése; None, ha nincs benne középre eső szöveg, vagy túl kicsi."""
     params = measures.params
     max_gap = measures.px(params.max_gap)
@@ -205,6 +234,9 @@ def _ink_of(core: np.ndarray, part: Span, measures: Measures) -> _Ink | None:
         column_ink = _column_ink(core, lines)
         extent = _central_group(column_ink, extent, max_gap) or extent
     trimmed = False
+    wider = _with_name(named, column_ink, lines, extent, measures) if named is not None else None
+    if wider is not None:  # a színes név a sorhoz tartozik: a magpixeleket is vele együtt számoljuk
+        column_ink, extent = _column_ink(named, lines), wider
     if abs((extent[0] + extent[1]) / 2.0 - measures.center) > params.sure_offset * measures.scale:
         cut = _symmetric_trim(column_ink, extent, measures.center, measures.px(params.trim_slack))
         if cut is not None:
@@ -212,7 +244,7 @@ def _ink_of(core: np.ndarray, part: Span, measures: Measures) -> _Ink | None:
     if (lines[1] - lines[0] < measures.px(params.row_min_height)
             or extent[1] - extent[0] < measures.px(params.row_min_width)):
         return None
-    return _Ink(lines, extent, int(column_ink[extent[0]:extent[1]].sum()), trimmed)
+    return _Ink(lines, extent, int(column_ink[extent[0]:extent[1]].sum()), trimmed, wider is not None)
 
 
 def _run_starts(zone: np.ndarray) -> int:

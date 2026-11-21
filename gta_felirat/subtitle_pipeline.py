@@ -16,6 +16,7 @@ from .i18n import t
 from .line_placement import PendingLines, TranslatedLine, build_shown, match_lines, pair_lines
 from .ocr import Box, OcrLine, OcrResult, SubtitleReader, is_spoken_line, region_to_box
 from .layer_plan import Shown
+from .speaker_color import SpeakerColors, SpeakerPalette
 from .subtitle_tracker import (NewSubtitle, SubtitleCleared, SubtitleTracker, is_same_subtitle, normalize,
                                similarity)
 from .translation_service import TranslationService
@@ -46,6 +47,7 @@ class SubtitlePipeline:
         self._translated: tuple[TranslatedLine, ...] = ()  # a kiírt fordítás soronként
         self._block: Shown | None = None  # egy tömbben kiírt szöveg (hibaüzenet, eltérő sorszám)
         self._pending = PendingLines()
+        self._palette = SpeakerPalette()  # a beszélőnevek megtanult színe (a játék szereplőnként színez)
         self._last_prefetch = ""
         self._next_ocr_at = 0.0
         self._frame_size = (1920, 1080)
@@ -123,6 +125,7 @@ class SubtitlePipeline:
             return
         if self._is_own_translation(result.text):
             return  # a saját kiírt fordításunkat olvastuk vissza, nem új felirat
+        self._palette.learn(result.speaker_colors)
         text = result.text
         if self._config.only_spoken_lines and not is_spoken_line(text):
             text = ""  # küldetésszöveg, tábla, menü: nem kimondott szöveg, nem fordítjuk
@@ -153,7 +156,12 @@ class SubtitlePipeline:
         if not self._live_lines or self._block is not None:
             return  # nincs soronkénti hely, vagy egy tömbben álló üzenet látszik
         pairs, untranslated = match_lines(self._translated, self._live_lines)
-        self.shown = build_shown(pairs, self._pending.boxes_to_hide(untranslated, now), self.shown)
+        self.shown = build_shown(pairs, self._pending.boxes_to_hide(untranslated, now), self.shown,
+                                 speaker_colors=self._live_speaker_colors())
+
+    def _live_speaker_colors(self) -> SpeakerColors:
+        """A most látható angol sorok beszélőinek megtanult színe (a fordításban a név angolul marad)."""
+        return self._palette.for_text("\n".join(line.text for line in self._live_lines))
 
     def _is_own_translation(self, raw_text: str) -> bool:
         if self.shown is None or not raw_text.strip():
@@ -187,7 +195,8 @@ class SubtitlePipeline:
         anchor = self._last_box or region_to_box(self._config.subtitle_region, *self._frame_size)
         prefix = t("pipeline.timeout_prefix", seconds=TRANSLATION_DEADLINE_SECONDS)
         self._translated = ()
-        self._block = Shown(text=f"{prefix} {source_text}", anchor=anchor)
+        self._block = Shown(text=f"{prefix} {source_text}", anchor=anchor,
+                            speaker_colors=self._palette.for_text(source_text))
         self.shown = self._block
 
     def _collect_translation(self, now: float) -> None:
@@ -216,7 +225,7 @@ class SubtitlePipeline:
         # Nincs soronkénti hely (régi olvasó, hibaüzenet, eltérő sorszám): egy tömbben, az angol helyén
         anchor = self._last_box or region_to_box(self._config.subtitle_region, *self._frame_size)
         self._translated = ()
-        self._block = Shown(text=translated, anchor=anchor)
+        self._block = Shown(text=translated, anchor=anchor, speaker_colors=self._palette.for_text(source_text))
         self.shown = self._block
 
     def _has_line_places(self) -> bool:

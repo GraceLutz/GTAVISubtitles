@@ -1,4 +1,6 @@
+import cv2
 import numpy as np
+import pytest
 
 from gta_felirat.config import AppConfig
 from gta_felirat.frosted_cover import Backdrop, cover_area, frosted_layer, frosted_patch
@@ -176,3 +178,53 @@ def test_preview_sample_text_does_not_blur_the_whole_region():
     region = Box(200, 850, 800, 970)
     layer.draw(transparent_layer(), None, True, preview_anchor=region, backdrop=Backdrop(game_band(), region))
     assert layer.last_cover is None
+
+
+def named_band(color, height=120, width=600):
+    """Sötét játékkép, rajta egy fekete körvonalas, színes beszélőnév (vékony betűszárak), utána fehér szöveg."""
+    band = np.full((height, width, 3), 30, np.uint8)
+    band[50:70, 100:200] = 0  # a név körvonala
+    for x in range(104, 196, 8):  # a név betűszárai: 4 px széles, színes
+        band[54:66, x:x + 4] = color
+    band[50:70, 210:450] = 0
+    band[54:66, 214:446] = 255
+    return band
+
+
+TEAL_BGR = (214, 207, 126)  # a játék türkiz beszélőneve (#7ECFD6) BGR-ben
+LIME_BGR = (60, 220, 170)  # Jason sárgászöld neve
+PALE_TEAL_BGR = (200, 214, 168)  # Kirk halvány türkiz neve (a csatornák szórása ~45)
+
+
+@pytest.mark.parametrize("color", [TEAL_BGR, LIME_BGR, PALE_TEAL_BGR], ids=["teal", "lime", "pale teal"])
+def test_transparent_cover_erases_the_coloured_speaker_name_too(color):
+    # Valós hiba: átlátszó panelnél a játék színes „Kirk:” neve átlátszott a fordítás alatt és mellett
+    source = named_band(color)
+    patch = frosted_patch(source, FEATHER, strength=0.0)
+    name = patch[54:66, 104:196].astype(int)
+    assert (name.max(axis=2) - name.min(axis=2)).max() < 40  # nem marad színes betű
+    assert name.max() < 120
+
+
+def _rectangle(shape):
+    cv2.rectangle(shape, (250, 40), (329, 79), 255, -1)
+
+
+def _disc(shape):
+    cv2.circle(shape, (290, 60), 22, 255, -1)
+
+
+def _tilted(shape):
+    corners = cv2.boxPoints(((290.0, 60.0), (80.0, 30.0), 30.0))
+    cv2.fillPoly(shape, [np.round(corners).astype(np.int32)], 255)
+
+
+@pytest.mark.parametrize("draw", [_rectangle, _disc, _tilted], ids=["rectangle", "disc", "tilted"])
+def test_thick_coloured_light_near_dark_is_not_taken_for_a_letter(draw):
+    # A hátsó lámpa piros foltja vastag: nem betű, a takarás nem tüntetheti el, a peremét sem
+    source = np.full((120, 600, 3), 20, np.uint8)
+    shape = np.zeros(source.shape[:2], np.uint8)
+    draw(shape)
+    source[shape > 0] = (40, 40, 230)
+    patch = frosted_patch(source, FEATHER, strength=0.0)
+    assert np.array_equal(patch[shape > 0], source[shape > 0])

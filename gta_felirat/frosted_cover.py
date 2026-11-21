@@ -1,7 +1,7 @@
 """Az angol felirat igényes eltakarása: elmosott, kissé sötétített „matt üveg” a játékképből.
 
-A takarás közepén a játékkép elmosva látszik (a fehér betűket az elmosásból kihagyjuk, így
-nem marad utánuk világos folt), a széle felé pedig fokozatosan visszaáll az éles képre,
+A takarás közepén a játékkép elmosva látszik (a fehér betűket és a színes beszélőnevet az
+elmosásból kihagyjuk, így nem marad utánuk világos folt), a széle felé pedig fokozatosan visszaáll az éles képre,
 így nincs kemény kerete. A forráskép a takarás nélküli játékkép (Remote Play módban az
 ablak saját tartalma, capture card módban maga a képkocka).
 
@@ -37,6 +37,12 @@ DARKEN = 0.72  # teljes erősségnél: a sötétebb háttéren jobban olvasható
 ERASE_SOFTEN_SIGMA = 1.5  # az eltüntetett betűk széle lágyan olvad a játékképbe
 MIN_TEXT_FREE_WEIGHT = 0.05  # ennél kevesebb betűmentes környezetnél sima elmosás
 SIDE_FEATHER_RATIO = 2  # oldalt szélesebb az átmenet: a felirat hosszú és lapos
+# A beszélő neve („Kirk:”) színes, fekete körvonalú betű: világos, telített, vékony szárú
+NAME_LEVEL = 120  # a legvilágosabb csatornája legalább ennyi
+NAME_MIN_SPREAD = 30  # és a csatornái legalább ennyire eltérnek (a fehér betűtől így válik el)
+NAME_MAX_STROKE_PX = 7  # ennél vastagabb színes folt (hátsó lámpa, neon) nem betű (1080p-n)
+# A takarás magassága kb. tizenegyszerese a betűszárnak: nagyobb felbontáson a határ is nagyobb
+NAME_STROKE_HEIGHT_DIVISOR = 11
 
 
 @dataclass(frozen=True)
@@ -69,7 +75,25 @@ def _text_mask(source: np.ndarray) -> np.ndarray:
     letters = (darkest >= level) & has_dark_nearby
     if level < TEXT_LEVEL:
         letters &= cv2.subtract(brightest, darkest) <= MAX_GREY_SPREAD
+    letters |= _name_letters(brightest, darkest, _name_stroke_px(source.shape[0])) & has_dark_nearby
     return cv2.dilate(letters.astype(np.uint8), _TEXT_GROW_KERNEL)
+
+
+def _name_stroke_px(height: int) -> int:
+    """A legvastagabb még betűnek számító színes vonal (páratlan, a takarás magasságához mérve)."""
+    return max(NAME_MAX_STROKE_PX, height // NAME_STROKE_HEIGHT_DIVISOR) | 1
+
+
+def _name_letters(brightest: np.ndarray, darkest: np.ndarray, stroke_px: int) -> np.ndarray:
+    """A színes beszélőnév betűi: világos, telített, vékony szárú.
+
+    A vastag színes folt (hátsó lámpa, neon) nem betű, és a széle sem: a kerek vagy ferde folt
+    peremébe nem fér bele a vizsgáló kör, ezért a folt egész környékét kihagyjuk.
+    """
+    coloured = ((brightest >= NAME_LEVEL) & (cv2.subtract(brightest, darkest) >= NAME_MIN_SPREAD)).astype(np.uint8)
+    thick = cv2.morphologyEx(coloured, cv2.MORPH_OPEN, _disc(stroke_px // 2))
+    near_thick = cv2.dilate(thick, _disc(stroke_px))
+    return (coloured > 0) & (near_thick == 0)
 
 
 def _text_level(darkest: np.ndarray) -> float:

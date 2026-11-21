@@ -48,6 +48,7 @@ import numpy as np
 
 from .i18n import t
 from .ocr import Box
+from .speaker_color import sample_speaker_colors
 from .row_tracker import (EMPTY_MAIL, RECOGNIZER, STABLE_CAPTURES, WATCHER, BandFrame, BandSnapshot, Mail, RowFinder,
                           RowText, RowTracker, WorkerFailed)
 
@@ -287,7 +288,9 @@ class RowRecognizer:
         reads = {row.row_id: self._reads.get(row.row_id, 0) for row in snapshot.rows}  # az eltűnt sorok kimaradnak
         todo = [row for row in snapshot.rows if row.missing == 0 and reads[row.row_id] < READ_ATTEMPTS]
         results = self._read_rows(snapshot.image, snapshot.area, [row.box for row in todo]) if todo else []
-        texts = tuple(RowText(row.row_id, text, score) for row, (text, score) in zip(todo, results, strict=True))
+        texts = tuple(RowText(row.row_id, text, score, speaker_colors=sample_speaker_colors(
+                          snapshot.image, snapshot.area, text, row.box))
+                      for row, (text, score) in zip(todo, results, strict=True))
         done = {item.row_id: READ_ATTEMPTS if item.is_legible(self._min_score) else reads[item.row_id] + 1
                 for item in texts}
         self._reads = {**reads, **done}

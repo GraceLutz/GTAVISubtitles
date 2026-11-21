@@ -230,6 +230,8 @@ class SubtitleLayer:
 
         A panel a szövegnél nem lehet alacsonyabb: ilyenkor magasabb a húzottnál, és a közepét ehhez kell tenni.
         """
+        if plan.last_rect is None:
+            return plan  # nincs panel (pl. csak az angol sort takarjuk): nincs mihez igazodni
         drawn = plan.last_rect[3]
         self._drawn_height_px = drawn
         center_y = self._fixed_edge_y - drawn // 2 if self._is_top_grabbed else self._fixed_edge_y + drawn // 2

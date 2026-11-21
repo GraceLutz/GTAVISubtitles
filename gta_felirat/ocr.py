@@ -6,6 +6,7 @@ aztán csak ezeket a sorokat olvassuk be (olvasás). Így a kijelző többi szö
 """
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -15,6 +16,7 @@ import numpy as np
 from .config import Region
 from .fragment_filter import (DIALOGUE_BOTTOM_RATIO, MIN_WHITE_FRACTION, Fragment, FrameCenter, row_pieces,
                               select_subtitle, white_fraction)
+from .speaker_color import SpeakerColors, sample_speaker_colors
 
 BRIGHT_PIXEL_LEVEL = 160  # a tévéműsor halványabb felirata (~183) is számítson
 # Sötét jelenetben egy rövid sor („It's me.”) a sáv ~0,1%-a; 0,2%-os küszöbbel be sem olvastuk
@@ -76,9 +78,16 @@ class OcrResult:
     text: str  # a megszólalások sortöréssel elválasztva
     box: Box | None
     lines: tuple[OcrLine, ...] = ()  # megszólalásonként a szöveg és a helye
+    speaker_colors: SpeakerColors = ()  # a beszélőnevek mért színe
 
 
 EMPTY_RESULT = OcrResult(text="", box=None)
+
+
+def _speaker_colors(crop: np.ndarray, area: Box, lines: Sequence[OcrLine]) -> SpeakerColors:
+    """A megszólalások beszélőneveinek színe; a két sorba tört megszólalás mindkét sorát mérjük."""
+    return tuple(sample for line in lines
+                 for sample in sample_speaker_colors(crop, area, line.text, *(line.rows or (line.box,))))
 
 
 def frame_center(region: Region, area: Box) -> FrameCenter:
@@ -305,7 +314,7 @@ class SubtitleReader:
         if not looks_like_subtitle(" ".join(line.text for line in lines)):
             return EMPTY_RESULT
         return OcrResult(text="\n".join(line.text for line in lines), box=union_box([line.box for line in lines]),
-                         lines=lines)
+                         lines=lines, speaker_colors=_speaker_colors(crop, area, lines))
 
     def detect_rows(self, crop: np.ndarray, area: Box) -> list[Box]:
         """A feliratszínű szövegdarabok dobozai (a teljes képen), képernyősoronként; olvasás nélkül (~25 ms)."""

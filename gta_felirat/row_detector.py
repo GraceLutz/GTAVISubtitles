@@ -11,6 +11,9 @@ A GTA felirata fehér betű vékony fekete körvonallal, és minden sora a kép 
    többi részéhez hozzá sem nyúlunk, jelölttel pedig csak az általa elérhető sorokon készül el
    a teljes szélességű maszk;
 3. a jelöltekből a row_geometry méri ki a sorokat, és dönt róluk (sor-e, és biztosan az-e).
+A beszélő neve („Lucia:”) színes, fekete körvonalú betű a fehér sor elején vagy közepén: a fehér sort
+oldalra kiterjesztjük a színes betűkre, ha a sor így a kép közepére kerül (a GTA a teljes sort, nevestül
+igazítja középre). Sorjelöltet csak fehér szöveg adhat, a sor magassága is a fehér betűkből jön.
 Előbb a fehér szöveget keressük; a tévéműsor halvány, szürke feliratát (a legvilágosabb pixelekhez
 igazított szinttel, mint a frosted_cover._text_level) csak akkor, ha nincs biztos fehér sor.
 
@@ -93,6 +96,12 @@ class Params:
     pad_right: float = 5.0
     pad_top: float = 8.0
     pad_bottom: float = 5.0
+    # A beszélő színes neve: a legvilágosabb csatornája legalább ennyi, és a csatornái legalább ennyire
+    # eltérnek (a fehér és szürke betűtől így elválik); szintetikus, körvonalas betűkön mérve
+    color_level: int = 120
+    color_min_spread: int = 30
+    # A névvel kiegészített sor legalább ilyen széles: a „Név: szó.” is az; a rendszám, egy színes folt nem
+    named_min_width: float = 80.0
 
 
 DEFAULT_PARAMS = Params()
@@ -192,7 +201,9 @@ def _scan(band: np.ndarray, tone: _Tone, measures: Measures) -> Detection:
     if not parts:
         return NOTHING
     core = _strip_mask(band, parts, tone, measures)
-    rows = find_rows(core, parts, measures, tone.dim)
+    # A színes beszélőnév betűi a sor két végének kiméréséhez számítanak (a halvány tévéfeliratnál nincs név)
+    named = None if tone.dim else _with_coloured_names(band, core, parts, measures)
+    rows = find_rows(core, parts, measures, tone.dim, named)
     if tone.dim:
         params = measures.params
         rows = tuple(row for row in rows
@@ -211,18 +222,36 @@ def _central_parts(band: np.ndarray, tone: _Tone, measures: Measures) -> list[Sp
     return seed_parts(core[:, left - crop_left:right - crop_left], measures)
 
 
+def _with_coloured_names(band: np.ndarray, core: np.ndarray, parts: list[Span], measures: Measures) -> np.ndarray:
+    """A fehér betűmag-maszk a színes (beszélőnév) betűmagokkal kiegészítve, ugyanazokon a sorokon."""
+    top, bottom = _strip_lines(band.shape[0], parts, measures)
+    coloured = np.zeros(band.shape[:2], np.uint8)
+    coloured[top:bottom] = _coloured_mask(band[top:bottom], measures)
+    _clear_cut_edges(coloured, top, bottom, measures)
+    return cv2.bitwise_or(core, coloured)
+
+
+def _strip_lines(height: int, parts: list[Span], measures: Measures) -> Span:
+    """A jelöltek által elérhető képsorok [top, bottom)."""
+    reach = measures.px(measures.params.row_max_height) + _margin(measures)
+    return max(0, parts[0][0] - reach), min(height, parts[-1][1] + reach)
+
+
+def _clear_cut_edges(mask: np.ndarray, top: int, bottom: int, measures: Measures) -> None:
+    """A mesterséges vágásszél melletti sorok nem pontosak: ott semmit se találjunk."""
+    margin = _margin(measures)
+    if top > 0:
+        mask[top:top + margin] = 0
+    if bottom < mask.shape[0]:
+        mask[bottom - margin:bottom] = 0
+
+
 def _strip_mask(band: np.ndarray, parts: list[Span], tone: _Tone, measures: Measures) -> np.ndarray:
     """Teljes szélességű betűmag-maszk, csak a jelöltek által elérhető sorokon kiszámolva (máshol 0)."""
-    height = band.shape[0]
-    margin = _margin(measures)
-    reach = measures.px(measures.params.row_max_height) + margin
-    top, bottom = max(0, parts[0][0] - reach), min(height, parts[-1][1] + reach)
+    top, bottom = _strip_lines(band.shape[0], parts, measures)
     core = np.zeros(band.shape[:2], np.uint8)
     core[top:bottom] = _core_mask(band[top:bottom], tone, measures)
-    if top > 0:  # a mesterséges vágásszél melletti sorok nem pontosak: ott semmit se találjunk
-        core[top:top + margin] = 0
-    if bottom < height:
-        core[bottom - margin:bottom] = 0
+    _clear_cut_edges(core, top, bottom, measures)
     core.setflags(write=False)
     return core
 
@@ -233,6 +262,21 @@ def _core_mask(image: np.ndarray, tone: _Tone, measures: Measures) -> np.ndarray
     white = cv2.inRange(image, (tone.level,) * BGR_CHANNELS + (0,) * alpha, (MAX_LEVEL,) * image.shape[2])
     dark = cv2.inRange(image, (0,) * image.shape[2], (tone.outline_level,) * BGR_CHANNELS + (MAX_LEVEL,) * alpha)
     thin = cv2.subtract(white, cv2.morphologyEx(white, cv2.MORPH_OPEN, _square(_stroke_px(measures) + 1)))
+    return cv2.bitwise_and(thin, cv2.dilate(dark, _square(2 * _reach_px(measures) + 1)))
+
+
+def _coloured_mask(image: np.ndarray, measures: Measures) -> np.ndarray:
+    """255 a színes betűk magján: világos, telített, vékony alakzat, amelyhez közel sötét (körvonal) pixel van."""
+    params = measures.params
+    blue, green, red = cv2.split(image)[:BGR_CHANNELS]
+    brightest = cv2.max(cv2.max(blue, green), red)
+    darkest = cv2.min(cv2.min(blue, green), red)
+    _, bright = cv2.threshold(brightest, params.color_level - 1, MAX_LEVEL, cv2.THRESH_BINARY)
+    _, saturated = cv2.threshold(cv2.subtract(brightest, darkest), params.color_min_spread - 1, MAX_LEVEL,
+                                 cv2.THRESH_BINARY)
+    coloured = cv2.bitwise_and(bright, saturated)
+    _, dark = cv2.threshold(brightest, params.outline_level, MAX_LEVEL, cv2.THRESH_BINARY_INV)
+    thin = cv2.subtract(coloured, cv2.morphologyEx(coloured, cv2.MORPH_OPEN, _square(_stroke_px(measures) + 1)))
     return cv2.bitwise_and(thin, cv2.dilate(dark, _square(2 * _reach_px(measures) + 1)))
 
 

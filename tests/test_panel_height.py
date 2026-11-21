@@ -211,3 +211,16 @@ def test_panel_dragged_shorter_than_its_text_keeps_its_fixed_edge_and_real_heigh
     assert saved[0]["panel_height_ratio"] == pytest.approx(during[3] / HEIGHT, abs=0.002)
     after = released(saved)
     assert after[1] + after[3] == pytest.approx(bottom, abs=2)
+
+
+def test_panel_with_nothing_to_draw_while_heightening_does_not_fail():
+    # Valós hiba: magasítás közben eltűnt a minta (felirat jött), a rajzoló TypeError-t dobott
+    layer = preview_layer([])
+    left, top, width, _height = layer.last_rect
+    layer.handle_mouse(cv2.EVENT_LBUTTONDOWN, left + width // 2, top, 0)
+    layer.handle_mouse(cv2.EVENT_MOUSEMOVE, left + width // 2, top - 50, 0)
+
+    english = Box(800, 950, 1120, 990)
+    plan = layer.plan((WIDTH, HEIGHT), Shown("", english, (), (english,)), True)  # csak takarás, panel nélkül
+
+    assert plan is not None and plan.last_rect is None

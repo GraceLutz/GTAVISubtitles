@@ -107,7 +107,8 @@ class RowPipeline(SubtitlePipeline):
         self._snapshot, self._rows = None, ()
         self._last_state, self._is_on_screen, self._next_deadline = None, False, NEVER
         if self._block is None:  # a takarásokat csak a soralapú út venné le: ami kell, azt a régi út újra kiteszi
-            self.shown = build_shown(match_lines(self._translated, self._live_lines)[0], [], self.shown)
+            self.shown = build_shown(match_lines(self._translated, self._live_lines)[0], [], self.shown,
+                                     speaker_colors=self._live_speaker_colors())
 
     def receive(self, snapshot: BandSnapshot | None, texts: Sequence[RowText], now: float) -> bool:
         """A munkaszálak eredményei (handoff.Inbox.drain()) és az idő múlása. True, ha a kiírt felirat megváltozott.
@@ -167,6 +168,8 @@ class RowPipeline(SubtitlePipeline):
         if stale:  # a sor közben eltűnt (vagy más méretű lett a kép): az eredménye elavult
             self.stats.stale_texts += stale
             logger.debug("%d row text(s) dropped: the rows are gone", stale)
+        for item in fresh.values():
+            self._palette.learn(item.speaker_colors)
         self._texts = {**self._texts, **fresh}
         return bool(fresh)
 
@@ -278,7 +281,7 @@ class RowPipeline(SubtitlePipeline):
             return  # egy tömbben álló üzenet látszik (hibaüzenet, eltérő sorszám)
         pairs, untranslated = match_lines(self._translated, self._live_lines)
         hidden = self._pending.boxes_to_hide(untranslated, now) + self._eager_boxes(now)
-        self.shown = build_shown(pairs, hidden, self.shown)
+        self.shown = build_shown(pairs, hidden, self.shown, speaker_colors=self._live_speaker_colors())
 
     def _eager_boxes(self, now: float) -> list[Box]:
         """Az új, még olvasatlan feliratszerű sorok: rövid ideig már olvasás előtt eltakarjuk őket."""

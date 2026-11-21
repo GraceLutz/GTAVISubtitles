@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from .config import AppConfig
 from .frosted_cover import SIDE_FEATHER_RATIO, cover_area
 from .ocr import Box
-from .overlay import (LINE_SPACING_RATIO, PANEL_PADDING_RATIO, RenderedSubtitle, beside_original_position, centered_position,
-                      hex_to_rgb, render_subtitle, subtitle_position)
+from .overlay import (LINE_SPACING_RATIO, PANEL_PADDING_RATIO, RenderedSubtitle, SpeakerColors, beside_original_position,
+                      centered_position, hex_to_rgb, render_subtitle, subtitle_position)
 
 MIN_FONT_PX = 12
 ORIGINAL_COVER_OPACITY = 255
@@ -41,6 +41,7 @@ class Shown:
     anchor: Box  # az eredeti angol felirat helye
     lines: tuple[ShownLine, ...] = ()  # soronkénti fordítás; ha üres, a text egy tömbben áll az anchor helyén
     hidden: tuple[Box, ...] = ()  # még le nem fordított angol sorok: csak eltakarjuk, hogy ne villanjanak fel
+    speaker_colors: SpeakerColors = ()  # (név, RGB) a játékból mintázva; üres: mindenki a config színével
 
 
 @dataclass(frozen=True)
@@ -150,7 +151,9 @@ def _text_jobs(config: AppConfig, view: LayerView,
     if view.is_preview:
         rendered, (x, y) = _preview_text(config, view, shown, font_size)
         return None, (TextJob(rendered, x, y),), (x, y, rendered.width, rendered.height)
-    if view.custom_center is None and view.hide_original and shown.lines:
+    # Az angol helyére írt fordítás soronként a saját angol sorára kerül, akkor is, ha a panelt
+    # korábban elhúzták: különben a fordítás a panelen, a takarás az angol sorokon állna, két helyen
+    if view.hide_original and shown.lines:
         return _line_by_line_jobs(config, view, shown, font_size)
     rendered, (x, y) = _block_text(config, view, shown, font_size)
     return None, (TextJob(rendered, x, y),), (x, y, rendered.width, rendered.height)
@@ -167,7 +170,7 @@ def _line_by_line_jobs(config: AppConfig, view: LayerView, shown: Shown,
                      else max(LINE_MAX_WIDTH_RATIO, config.panel_width_ratio))
         rendered = render_subtitle(line.text, config.font_path, font_size,
                                    _wrap_width(int(view.width * max_width), font_size), (0, 0), 0,
-                                   hex_to_rgb(config.speaker_color))
+                                   hex_to_rgb(config.speaker_color), shown.speaker_colors)
         texts.append(TextJob(rendered, *subtitle_position(rendered, line.anchor, view.width, view.height)))
     # A szegély miatt a szomszéd sorok kirajzolása kicsit fedheti egymást; ennél többet nem
     texts = _stacked(texts, view.height, allowed_overlap=font_size // 2)
@@ -210,13 +213,14 @@ def _block_text(config: AppConfig, view: LayerView, shown: Shown,
     max_width = _wrap_width(int(view.width * config.panel_width_ratio), font_size)
     if view.custom_center is not None:
         rendered = render_subtitle(shown.text, config.font_path, font_size, max_width,
-                                   (0, _min_height(config, view)), config.panel_opacity, speaker)
+                                   (0, _min_height(config, view)), config.panel_opacity, speaker,
+                                   shown.speaker_colors)
         return rendered, centered_position(rendered, *view.custom_center, view.width, view.height)
     anchor = shown.anchor
     min_panel = (anchor.width + font_size, anchor.height + font_size // 2) if view.hide_original else (0, 0)
     min_panel = (min_panel[0], max(min_panel[1], _min_height(config, view)))
     rendered = render_subtitle(shown.text, config.font_path, font_size, max_width, min_panel,
-                               config.panel_opacity, speaker)
+                               config.panel_opacity, speaker, shown.speaker_colors)
     if view.hide_original:
         return rendered, subtitle_position(rendered, anchor, view.width, view.height)
     return rendered, beside_original_position(rendered, anchor, view.width, view.height, gap=font_size // 2)

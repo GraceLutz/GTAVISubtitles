@@ -28,6 +28,12 @@ PANEL_COLOR = (10, 10, 10)
 MAX_SPEAKER_WORDS = 3
 # Sor eleji beszélőnév: „Locals:” → a név színes, a kettősponttól fehér
 _SPEAKER_NAME = re.compile(r"^([^\W\d_](?:[^\W\d_]|[ .'-]){0,30}):\s")
+# Egy sorban több megszólalás: mondatvég után új „Név:” kezdődik (mint a translator beszélőhatára)
+_SPEAKER_BOUNDARY = re.compile(r"(?<=[.!?…])\s+(?=[A-Z](?:[^\W\d_]|[ .'-]){0,30}:\s)")
+
+type Rgb = tuple[int, int, int]
+# (név, RGB) párok a játékból mintázva; a név úgy, ahogy a kettőspont előtt áll
+type SpeakerColors = tuple[tuple[str, Rgb], ...]
 
 
 @dataclass(frozen=True)
@@ -88,27 +94,75 @@ def _speaker_split(line: str) -> tuple[str, str]:
     return match.group(1), line[len(match.group(1)):]
 
 
+def _known_color(name: str, speaker_colors: SpeakerColors) -> Rgb | None:
+    """A név mintázott színe (kis-nagybetűtől és szélső szóközöktől függetlenül); None, ha nincs."""
+    key = name.strip().casefold()
+    for known, color in speaker_colors:
+        if known.strip().casefold() == key:
+            return color
+    return None
+
+
+def _line_pieces(line: str, speaker_color: Rgb | None,
+                 speaker_colors: SpeakerColors) -> list[tuple[str, Rgb | None]]:
+    """A sor darabjai (szöveg, szín) sorrendben; None szín: fehér.
+
+    A sor eleji név a saját mintázott színét kapja, ha nincs, a speaker_color-t. Ha a sor
+    közepén új megszólalás kezdődik, annak neve csak akkor színes, ha ismert (mintázott) név:
+    így ismeretlen „Valami:” a mondat közepén fehér marad, és üres speaker_colors mellett a sor
+    pontosan úgy rajzolódik, mint eddig.
+    """
+    if not speaker_color and not speaker_colors:
+        return [(line, None)]
+    boundaries = [match.end() for match in _SPEAKER_BOUNDARY.finditer(line)] if speaker_colors else []
+    starts = [0, *boundaries]
+    pieces: list[tuple[str, Rgb | None]] = []
+    for index, start in enumerate(starts):
+        end = starts[index + 1] if index + 1 < len(starts) else len(line)
+        name, rest = _speaker_split(line[start:end])
+        color = _known_color(name, speaker_colors) if name else None
+        if name and index == 0 and color is None:
+            color = speaker_color
+        if color is None:
+            pieces.append((line[start:end], None))
+            continue
+        pieces += [(name, color), (rest, None)]
+    return pieces
+
+
 def _draw_line(draw: ImageDraw.ImageDraw, position: tuple[float, int], line: str,
-               font: ImageFont.FreeTypeFont, speaker_color: tuple[int, int, int] | None) -> None:
-    """Árnyék, majd a szöveg; a beszélő neve speaker_color színű, a többi fehér."""
+               font: ImageFont.FreeTypeFont,
+               colors: tuple[Rgb | None, SpeakerColors]) -> None:
+    """Árnyék, majd a szöveg; a beszélő neve a saját (vagy a speaker_color) színű, a többi fehér.
+
+    colors = (speaker_color, speaker_colors).
+    """
     x, y = position
     size = font.size
     outline = max(1, int(size * OUTLINE_RATIO))
     shadow = max(1, int(size * SHADOW_OFFSET_RATIO))
     draw.text((x + shadow, y + shadow), line, font=font, fill=SHADOW_COLOR)
-    name, rest = _speaker_split(line) if speaker_color else ("", line)
-    if name:
-        draw.text((x, y), name, font=font, fill=speaker_color + (255,),
-                  stroke_width=outline, stroke_fill=OUTLINE_COLOR)
-        x += font.getlength(name)
-    draw.text((x, y), rest, font=font, fill=TEXT_COLOR, stroke_width=outline, stroke_fill=OUTLINE_COLOR)
+    drawn = ""
+    for piece, color in _line_pieces(line, *colors):
+        if not piece:
+            continue
+        # A darab helye az eddigi szöveg hossza: így az alávágás (kerning) sem tolja el a folytatást
+        piece_x = x + font.getlength(drawn) if drawn else x
+        fill = TEXT_COLOR if color is None else color + (255,)
+        draw.text((piece_x, y), piece, font=font, fill=fill, stroke_width=outline, stroke_fill=OUTLINE_COLOR)
+        drawn += piece
 
 
 @lru_cache(maxsize=64)
 def render_subtitle(text: str, font_path: str, font_size: int, max_width: int,
                     min_panel: tuple[int, int] = (0, 0), opacity: int = PANEL_ALPHA,
-                    speaker_color: tuple[int, int, int] | None = None) -> RenderedSubtitle:
-    """Kirajzolja a szöveget egy sötét panelre; min_panel = (szél, mag) eltakarandó terület."""
+                    speaker_color: Rgb | None = None,
+                    speaker_colors: SpeakerColors = ()) -> RenderedSubtitle:
+    """Kirajzolja a szöveget egy sötét panelre; min_panel = (szél, mag) eltakarandó terület.
+
+    speaker_colors: (név, RGB) párok, a beszélőnév ezekből kapja a színét; ha a név nincs
+    köztük, a speaker_color-t (ami None is lehet: akkor fehér).
+    """
     font = _load_font(font_path, font_size)
     lines = wrap_text(text, font, max_width) or [""]
     line_height = int(font_size * (1 + LINE_SPACING_RATIO))
@@ -121,7 +175,7 @@ def render_subtitle(text: str, font_path: str, font_size: int, max_width: int,
     top = (height - line_height * len(lines)) // 2
     for index, line in enumerate(lines):
         x = (width - font.getlength(line)) / 2
-        _draw_line(draw, (x, top + index * line_height), line, font, speaker_color)
+        _draw_line(draw, (x, top + index * line_height), line, font, (speaker_color, speaker_colors))
     return RenderedSubtitle(rgba=np.asarray(image))
 
 

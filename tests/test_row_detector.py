@@ -296,4 +296,106 @@ def test_default_thresholds_are_the_values_measured_on_the_recordings():
     # A felvételeken hangolt értékek, a tesztek viszont nem látják a felvételeket: módosítás csak újraméréssel
     assert astuple(DEFAULT_PARAMS) == (
         200, 150, 4.0, 8.0, 150, 25, 0.005, 40, 0.7, 90, 110.0, 2, 2.0, 9.0, 18.0, 32.0, 13.0, 26.0, 6.0,
-        45.0, 0.07, 0.30, 0.062, 3.2, 3.0, 34.0, 15.0, 29.0, 0.085, 0.22, 0.08, 2.5, 7.0, 5.0, 8.0, 5.0)
+        45.0, 0.07, 0.30, 0.062, 3.2, 3.0, 34.0, 15.0, 29.0, 0.085, 0.22, 0.08, 2.5, 7.0, 5.0, 8.0, 5.0, 120, 30, 80.0)
+
+
+# --- színes beszélőnév (Lucia:, Brian:) a fehér sor elején vagy közepén -----------------------------
+
+TEAL, ORANGE = (214, 207, 126), (60, 170, 240)  # BGR: a nevek színe a játékban (becsült)
+PALE_TEAL = (200, 214, 168)  # BGR: Kirk halvány türkiz neve a felvételen (a csatornák szórása ~45)
+
+
+def write_spoken(band, parts, baseline):
+    """Egy középre igazított sor több darabból: (szöveg, BGR szín) párok, fekete körvonallal."""
+    text = "".join(part for part, _color in parts)
+    letters = glyphs(text, baseline)
+    side = 2 * OUTLINE_PX + 1
+    band[cv2.dilate(letters, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (side, side))) > 0] = 0
+    (width, _), _ = cv2.getTextSize(text, FONT, FONT_SCALE, 1)
+    x = round(CENTER - width / 2)
+    colors = np.zeros(band.shape, np.float64)
+    for part, color in parts:
+        (part_width, _), _ = cv2.getTextSize(part, FONT, FONT_SCALE, 1)
+        colors[:, x:x + part_width + 1] = color
+        x += part_width
+    alpha = letters[:, :, None] / 255.0
+    band[:] = (band * (1.0 - alpha) + colors * alpha + 0.5).astype(np.uint8)
+    return band
+
+
+def ink_columns(text, baseline):
+    columns = np.flatnonzero(glyphs(text, baseline).any(axis=0))
+    return columns[0], columns[-1] + 1
+
+
+@pytest.mark.parametrize("color", [TEAL, ORANGE, PALE_TEAL], ids=["teal", "orange", "pale teal"])
+def test_coloured_speaker_name_belongs_to_its_row(color):
+    band = write_spoken(flat(DARK), [("Lucia:", color), (" Stop talking, will you?", (255, 255, 255))],
+                        ROW_BASELINES[-1])
+
+    rows = rows_in(band)
+
+    first, last = ink_columns("Lucia: Stop talking, will you?", ROW_BASELINES[-1])
+    assert len(rows) == 1
+    assert rows[0].ink_left <= first + 2 and rows[0].ink_right >= last - 2  # a név és a sor vége is benne van
+    assert rows[0].sure
+
+
+def test_coloured_name_in_the_middle_of_a_two_speaker_row_keeps_the_row_whole():
+    parts = [("Vagrant:", ORANGE), (" Hey you. ", (255, 255, 255)), ("Lucia:", TEAL), (" Go away.", (255, 255, 255))]
+    band = write_spoken(flat(DARK), parts, ROW_BASELINES[-1])
+
+    rows = rows_in(band)
+
+    first, last = ink_columns("".join(part for part, _ in parts), ROW_BASELINES[-1])
+    assert len(rows) == 1
+    assert rows[0].ink_left <= first + 2 and rows[0].ink_right >= last - 2
+
+
+def test_coloured_name_in_the_middle_without_a_name_in_front_keeps_the_row_whole():
+    parts = [("Hey you, over there. ", (255, 255, 255)), ("Lucia:", TEAL), (" Go.", (255, 255, 255))]
+    band = write_spoken(flat(DARK), parts, ROW_BASELINES[-1])
+
+    rows = rows_in(band)
+
+    first, last = ink_columns("".join(part for part, _ in parts), ROW_BASELINES[-1])
+    assert len(rows) == 1
+    assert rows[0].ink_left <= first + 2 and rows[0].ink_right >= last - 2
+
+
+def test_coloured_blob_right_of_the_text_does_not_join_the_row():
+    # Valós eset (frames4): a mondat végi „?” mellé érő bőrszínű kéz miatt a sor jobbra nőtt, és nem lett biztos
+    parts = [("Lucia:", TEAL), (" Hey, how did you get here again?", (255, 255, 255))]
+    text = "".join(part for part, _ in parts)
+    band = write_spoken(flat(DARK), parts, ROW_BASELINES[-1])
+    first, last = ink_columns(text, ROW_BASELINES[-1])
+    top = ROW_BASELINES[-1] - 14
+    band[top:top + 16, last + 3:last + 6] = (90, 140, 210)  # vékony, bőrszínű (BGR) folt a „?” mellett
+
+    rows = rows_in(band)
+
+    assert len(rows) == 1
+    assert rows[0].ink_left <= first + 2  # a név a sorhoz tartozik
+    assert rows[0].ink_right <= last + 2  # a folt nem
+
+
+def test_coloured_text_alone_is_not_a_subtitle_row():
+    band = write_spoken(flat(DARK), [("Lucia: Stop talking, will you?", TEAL)], ROW_BASELINES[-1])
+
+    assert rows_in(band) == ()
+
+
+def test_coloured_blob_glued_right_of_an_off_centre_row_is_not_taken_for_a_name():
+    # A balra csúszott sor jobb végéhez tapadó színes folt (bőr, háttér) középre húzná a sort,
+    # mégsem a sor része: a név után mindig fehér szöveg jön, a sor jobb vége fehér betű
+    from gta_felirat.row_detector import DEFAULT_PARAMS, Measures
+    from gta_felirat.row_geometry import MASK_ON, _with_name
+
+    measures = Measures(DEFAULT_PARAMS, 1.0, 500.0, (390, 610), None)
+    lines = (0, 10)
+    named = np.zeros((10, 1000), np.uint8)
+    named[:, 300:700] = MASK_ON  # a fehér szöveg és a hozzá tapadó színes folt
+    white_ink = np.zeros(1000, np.int32)
+    white_ink[300:640] = 10  # a fehér szöveg: a közepe 470, a kép közepe 500
+
+    assert _with_name(named, white_ink, lines, (300, 640), measures) is None
