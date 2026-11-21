@@ -157,7 +157,8 @@ class SubtitlePipeline:
         if not self._live_lines or self._block is not None:
             return  # nincs soronkénti hely, vagy egy tömbben álló üzenet látszik
         pairs, untranslated = match_lines(self._translated, self._live_lines)
-        self.shown = build_shown(pairs, self._pending.boxes_to_hide(untranslated, now), self.shown,
+        hidden = self._pending.boxes_to_hide(untranslated, now, is_translating=self._translate_future is not None)
+        self.shown = build_shown(pairs, hidden, self.shown,
                                  speaker_colors=self._live_speaker_colors())
 
     def _live_speaker_colors(self) -> SpeakerColors:

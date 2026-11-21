@@ -716,17 +716,19 @@ def test_subtitle_that_cleared_starts_from_scratch_when_it_returns(make_scene):
     assert scene.backend.calls == [TROUBLE]  # másodszorra a gyorsítótárból jön
 
 
-def test_untranslated_line_shows_again_when_its_translation_is_late(make_scene):
+def test_untranslated_line_stays_hidden_while_its_translation_is_late(make_scene):
     scene = make_scene()
     scene.show(1.0, row(1, LOWER, first_seen=1.0))
 
     scene.read(1.04, (1, TROUBLE))
     hidden = scene.shown
-    shown_again_at = scene.tick_until_change(1.05, 4.0)
+    changed_at = scene.tick_until_change(1.05, 1.04 + 3 * PENDING_HIDE_SECONDS)
 
     assert hidden.hidden == (LOWER,)
-    assert scene.shown is None  # a fordítás késik: az angol sor újra látszik
-    assert PENDING_HIDE_SECONDS <= shown_again_at - 1.04 <= PENDING_HIDE_SECONDS + RECHECK_SECONDS + TICK
+    assert changed_at is None  # a fordítás késik, de az angol sor nem villan fel: a takarás marad
+    assert scene.shown.hidden == (LOWER,)
+    assert scene.translated(1.04 + 3 * PENDING_HIDE_SECONDS + TICK)
+    assert scene.shown.lines == (ShownLine(hu(TROUBLE), LOWER),)
 
 
 def test_failed_translation_shows_the_block_message(make_scene):

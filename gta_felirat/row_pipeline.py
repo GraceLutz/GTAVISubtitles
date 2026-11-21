@@ -485,7 +485,8 @@ class RowPipeline(SubtitlePipeline):
         if self._block is not None:
             return  # egy tömbben álló üzenet látszik (hibaüzenet, eltérő sorszám)
         pairs, untranslated = match_lines(self._translated, self._live_lines)
-        hidden = self._pending.boxes_to_hide(untranslated, now) + self._eager_boxes(now) + self._objective.hidden(now)
+        hidden = (self._pending.boxes_to_hide(untranslated, now, is_translating=self._translate_future is not None)
+                  + self._eager_boxes(now) + self._objective.hidden(now))
         objective = self._objective.pair()
         if objective is not None:
             pairs.append(objective)

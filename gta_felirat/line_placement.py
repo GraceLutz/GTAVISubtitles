@@ -23,7 +23,8 @@ ANCHOR_JITTER_PX = 3  # ennél kisebb elmozdulás OCR-zaj: a szöveg ne remegjen
 # Világos, mozgó háttéren a sor két széle olvasásonként ennyit is vándorol (a sor maga középre igazítva áll)
 ANCHOR_WIDTH_JITTER_PX = 12
 MIN_SHARED_ROW_RATIO = 0.5  # egy másik sor magasságának ekkora része lóg a helyre: azt a sort már ő foglalja
-PENDING_HIDE_SECONDS = 1.5  # eddig takarjuk a még le nem fordított angol sort; utána újra látszik
+# Eddig takarjuk a még le nem fordított angol sort, ha nincs úton fordítás; ha van, amíg megérkezik
+PENDING_HIDE_SECONDS = 1.5
 
 
 @dataclass(frozen=True)
@@ -158,7 +159,9 @@ class PendingLines:
     def __init__(self) -> None:
         self._since: dict[str, float] = {}
 
-    def boxes_to_hide(self, untranslated: list[OcrLine], now: float) -> list[Box]:
+    def boxes_to_hide(self, untranslated: list[OcrLine], now: float, *, is_translating: bool = False) -> list[Box]:
+        """is_translating: úton van a felirat fordítása; addig a sor takarva marad (angolul sosem villan fel),
+        akármeddig is tart. Fordítás nélkül (pl. még nem erősítettük meg) PENDING_HIDE_SECONDS-ig takarjuk."""
         seen: dict[str, float] = {}
         boxes = []
         for line in untranslated:
@@ -166,7 +169,7 @@ class PendingLines:
             since = next((start for known, start in self._since.items()
                           if similarity(known, key) >= MATCH_THRESHOLD), now)
             seen[key] = since
-            if now - since < PENDING_HIDE_SECONDS:
+            if is_translating or now - since < PENDING_HIDE_SECONDS:
                 boxes.append(line.box)
         self._since = seen  # ami már nem látszik, azt elfelejtjük
         return boxes

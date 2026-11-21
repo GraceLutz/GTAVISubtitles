@@ -285,6 +285,14 @@ def test_untranslated_line_shows_again_when_the_translation_is_late():
     assert pending.boxes_to_hide([OcrLine(HOW, LOWER)], now=10.0 + PENDING_HIDE_SECONDS + 0.1) == []
 
 
+def test_untranslated_line_stays_hidden_while_its_translation_is_on_the_way():
+    pending = PendingLines()
+    pending.boxes_to_hide([OcrLine(HOW, LOWER)], now=10.0, is_translating=True)
+
+    assert pending.boxes_to_hide([OcrLine(HOW, LOWER)], now=10.0 + 5 * PENDING_HIDE_SECONDS,
+                                 is_translating=True) == [LOWER]
+
+
 def test_pending_clock_follows_the_line_when_it_scrolls_up():
     pending = PendingLines()
     pending.boxes_to_hide([OcrLine(HOW, LOWER)], now=10.0)
