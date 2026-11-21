@@ -282,7 +282,7 @@ Az overlay ablak csak képet mutat. A hanghoz válassz egyet:
 |---|---|---|
 | `device_index` | `0` | capture card sorszáma |
 | `capture_width` / `capture_height` / `capture_fps` | 1920 / 1080 / 60 | kért képméret |
-| `subtitle_region` | 0.06 / 0.70 / 0.94 / 0.98 | ahol a program az angol feliratot keresi |
+| `subtitle_region` | 0.06 / 0.55 / 0.94 / 0.98 | ahol a program az angol feliratot keresi |
 | `ocr_interval_seconds` | `0.1` | milyen gyakran olvas (az OCR ~0,1 mp, ennél sűrűbben nem tud) |
 | `min_text_score` | `0.6` | ennél bizonytalanabb OCR-találatot eldob |
 | `stable_reads` | `2` | ennyi egyező olvasás után fordít |

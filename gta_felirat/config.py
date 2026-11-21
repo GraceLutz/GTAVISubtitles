@@ -38,7 +38,9 @@ class Region:
     """Képrészlet a teljes kép arányában (0.0–1.0)."""
 
     left: float = 0.06  # széles sáv: a hosszú feliratsor széle se lógjon ki belőle
-    top: float = 0.70  # két-három soros felirat is beférjen (a játék a hosszú szöveget felfelé tolja)
+    # 4-5 beszélő egymás fölött, soronként akár két képernyősorral is beférjen (a játék a régebbi sorokat
+    # felfelé tolja; 1080p-ben egy sor kb. 40 px, a legalsó kb. a 985. képpontnál ér véget)
+    top: float = 0.55
     right: float = 0.94
     bottom: float = 0.98
 

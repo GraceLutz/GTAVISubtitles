@@ -294,7 +294,7 @@ The overlay window only shows the picture. For sound, pick one:
 |---|---|---|
 | `device_index` | `0` | capture card number |
 | `capture_width` / `capture_height` / `capture_fps` | 1920 / 1080 / 60 | requested picture size |
-| `subtitle_region` | 0.06 / 0.70 / 0.94 / 0.98 | where the program looks for the English subtitle |
+| `subtitle_region` | 0.06 / 0.55 / 0.94 / 0.98 | where the program looks for the English subtitle |
 | `ocr_interval_seconds` | `0.1` | how often it reads (OCR takes ~0.1 s, it can't go faster) |
 | `min_text_score` | `0.6` | OCR results less certain than this are dropped |
 | `stable_reads` | `2` | translates after this many matching reads |

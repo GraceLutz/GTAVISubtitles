@@ -237,3 +237,20 @@ def test_only_the_dim_tv_subtitle_row_is_marked_dim(level, is_dim):
     rows = find_rows(band, AREA, FRAME)
 
     assert [row.dim for row in rows] == [is_dim]
+
+
+ROW_PITCH = DIALOGUE_BASELINE - UPPER_BASELINE  # két egymás fölötti feliratsor távolsága
+FIVE_SPEAKERS = ["Lucia: Okay, mister, I have had it up to here,", "and I mean it this time.",
+                 "Jason: What is wrong with you?", "Cal: Get off my junk, you two!",
+                 "Boobie: Besides the obvious, I mean,", "you know what I'm talkin' about.",
+                 "Lucia: Whatever, let's just go.", "Jason: Fine by me."]
+
+
+def test_five_speakers_with_wrapped_rows_all_fit_in_the_default_band():
+    band = band_with(*[(text, DIALOGUE_BASELINE - (len(FIVE_SPEAKERS) - 1 - index) * ROW_PITCH)
+                       for index, text in enumerate(FIVE_SPEAKERS)])
+
+    rows = ROW_FINDER.detect(band, AREA, FRAME)
+
+    assert len(rows) == len(FIVE_SPEAKERS)
+    assert all(row.sure for row in rows)
