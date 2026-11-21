@@ -2,12 +2,14 @@ import codecs
 import threading
 import time
 
+import numpy as np
 import pytest
-from band_drawing import AREA, DIALOGUE_BASELINE, FRAME, band_with
+from band_drawing import AREA, CENTER_X, DIALOGUE_BASELINE, FRAME, band_with
 
 from gta_felirat.band_feed import CapturedBand
 from gta_felirat.config import AppConfig
 from gta_felirat.ocr import EMPTY_RESULT
+from gta_felirat.row_finder import make_row_finder
 from gta_felirat.row_path import RowPath, WakingRowPipeline
 from gta_felirat.row_pipeline import RowPipeline
 from gta_felirat.translation_service import TranslationService
@@ -16,6 +18,7 @@ from gta_felirat.translator import CachedTranslator, TranslatorChoice
 TROUBLE = "We ain't lookin' for trouble, okay?"
 WAIT_SECONDS = 5  # felső határ a munkaszálakra várva; a tesztek ezredmásodpercek alatt végeznek
 STEP_SECONDS = 0.04  # két rögzítés között eltelő idő
+STILL_PICTURE_SECONDS = 0.2  # ennyi ideje nem jött új kép: áll a kép, az egyszer látott sor is végleges
 
 
 def hu(text):
@@ -46,12 +49,13 @@ class RowReader:
 class Scene:
     """A soralapú út a tesztben: valódi pipeline, sorfigyelő és munkaszálak; hamis felismerő és fordító."""
 
-    def __init__(self, reader):
+    def __init__(self, reader, whole_band=False):
         self.reader = reader
         self.woken = threading.Event()
         service = TranslationService(TranslatorChoice("deepl", "hu", "", ""), CachedTranslator(QuickBackend()))
         self.pipeline = RowPipeline(AppConfig(only_spoken_lines=False), None, service)
-        self.path = RowPath(self.pipeline, reader.read_rows, AppConfig().min_text_score, self.woken.set)
+        self.path = RowPath(self.pipeline, reader.read_rows, AppConfig().min_text_score, self.woken.set,
+                            whole_band=whole_band)
         self.captures = 0
 
     def capture(self, band, at):
@@ -79,8 +83,8 @@ class Scene:
 def make_scene():
     scenes = []
 
-    def make(reader=None):
-        scenes.append(Scene(reader or RowReader()))
+    def make(reader=None, whole_band=False):
+        scenes.append(Scene(reader or RowReader(), whole_band))
         return scenes[-1]
 
     yield make
@@ -188,3 +192,96 @@ def test_closing_ends_the_worker_threads(make_scene):
         thread.join(WAIT_SECONDS)
 
     assert started and not any(thread.is_alive() for thread in started)
+
+
+def side_text_band():
+    """Ugyanaz a párbeszédsor a sáv bal felébe tolva: a kép közepén nincs felirat."""
+    centred = band_with((TROUBLE, DIALOGUE_BASELINE))
+    band = band_with()
+    shift = CENTER_X // 2
+    band[:, :-shift] = centred[:, shift:]
+    return band
+
+
+class GatedReader(RowReader):
+    """Hamis felismerő, amely csak a kapu megnyitása után válaszol: addig a sor biztosan olvasatlan."""
+
+    def __init__(self):
+        super().__init__()
+        self.gate = threading.Event()
+
+    def read_rows(self, band, area, boxes):
+        self.gate.wait(WAIT_SECONDS)
+        return super().read_rows(band, area, boxes)
+
+
+def test_text_away_from_the_centre_is_left_alone_without_the_whole_band(make_scene):
+    scene = make_scene()
+
+    scene.capture(side_text_band(), at=10.0)
+    scene.path.pump(10.01, FRAME)
+
+    assert scene.pipeline.snapshot.rows == ()
+
+
+def test_text_away_from_the_centre_is_not_hidden_before_it_is_read_with_the_whole_band(make_scene):
+    reader = GatedReader()
+    scene = make_scene(reader, whole_band=True)
+
+    scene.capture(side_text_band(), at=10.0)
+    scene.path.pump(10.01, FRAME)
+    rows, shown = scene.pipeline.snapshot.rows, scene.pipeline.shown
+    reader.gate.set()
+    read = scene.pump_until(lambda: scene.reader.requests, now=10.05)
+
+    assert [row.sure for row in rows] == [False]
+    assert shown is None or not shown.hidden  # olvasás előtt nem takarjuk
+    assert read and scene.reader.requests[0][0].right < FRAME[0] // 2
+
+
+# --- a sáv széléhez közeli szöveg: amit a kereső megtart, azt a pipeline is lefordítja ----------------
+
+SPOKEN = "Lucia: Where are you going?"
+MAX_EDGE_PROBE_PX = 60  # ennyi képpontig keressük a sáv szélétől azt a helyet, ahol a kereső már megtartja
+
+
+def ink_columns(band):
+    """A fehér betűk első és utolsó utáni oszlopa a sávban."""
+    columns = np.flatnonzero((band.min(axis=2) >= 200).any(axis=0))
+    return int(columns[0]), int(columns[-1]) + 1
+
+
+def line_at_edge(side, distance):
+    """A kimondott sor a sáv bal (vagy jobb) széléhez tolva: a betűi distance képpontra kezdődnek (végződnek)."""
+    centred = band_with((SPOKEN, DIALOGUE_BASELINE))
+    first, last = ink_columns(centred)
+    band = band_with()
+    if side == "left":
+        shift = first - distance
+        band[:, :-shift] = centred[:, shift:]
+    else:
+        shift = AREA.width - distance - last
+        band[:, shift:] = centred[:, :-shift]
+    return band
+
+
+def nearest_kept(side):
+    """A sáv széléhez legközelebbi hely, ahol a kereső a sort még megtartja (a szél vágása nélkül)."""
+    finder = make_row_finder(whole_band=True)
+    for distance in range(MAX_EDGE_PROBE_PX):
+        band = line_at_edge(side, distance)
+        if finder.detect(band, AREA, FRAME):
+            return band
+    raise AssertionError("the finder never keeps the line")
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_row_the_finder_keeps_just_inside_the_band_edge_is_translated(make_scene, side):
+    scene = make_scene(RowReader(SPOKEN), whole_band=True)
+
+    scene.capture(nearest_kept(side), at=10.0)
+    translated = scene.pump_until(lambda: scene.pipeline.shown is not None and scene.pipeline.shown.lines,
+                                  now=10.0 + STILL_PICTURE_SECONDS)
+
+    assert translated
+    assert scene.pipeline.shown.lines[0].text == "Lucia: " + hu("Where are you going?")

@@ -1,4 +1,4 @@
-from dataclasses import astuple
+from dataclasses import astuple, replace
 
 import cv2
 import numpy as np
@@ -296,7 +296,8 @@ def test_default_thresholds_are_the_values_measured_on_the_recordings():
     # A felvételeken hangolt értékek, a tesztek viszont nem látják a felvételeket: módosítás csak újraméréssel
     assert astuple(DEFAULT_PARAMS) == (
         200, 150, 4.0, 8.0, 150, 25, 0.005, 40, 0.7, 90, 110.0, 2, 2.0, 9.0, 18.0, 32.0, 13.0, 26.0, 6.0,
-        45.0, 0.07, 0.30, 0.062, 3.2, 3.0, 34.0, 15.0, 29.0, 0.085, 0.22, 0.08, 2.5, 7.0, 5.0, 8.0, 5.0, 120, 30, 80.0)
+        45.0, 0.07, 0.30, 0.062, 3.2, 3.0, 34.0, 15.0, 29.0, 0.085, 0.22, 0.08, 2.5, 7.0, 5.0, 8.0, 5.0, 120, 30, 80.0,
+        False, 12.0, 40.0)
 
 
 # --- színes beszélőnév (Lucia:, Brian:) a fehér sor elején vagy közepén -----------------------------
@@ -399,3 +400,227 @@ def test_coloured_blob_glued_right_of_an_off_centre_row_is_not_taken_for_a_name(
     white_ink[300:640] = 10  # a fehér szöveg: a közepe 470, a kép közepe 500
 
     assert _with_name(named, white_ink, lines, (300, 640), measures) is None
+
+
+# --- a teljes sáv szövege (whole_band): a középre igazított sorok mellett a sáv többi szövege is -----------
+
+WHOLE_BAND = replace(DEFAULT_PARAMS, whole_band=True)
+
+
+def whole_band_rows(band, **options):
+    return detect_rows(band, BAND_LEFT, FRAME_WIDTH, WHOLE_BAND, **options)
+
+
+def spoken_band():
+    return write_spoken(flat(DARK), [("Lucia:", TEAL), (" Stop talking, will you?", (255, 255, 255))],
+                        ROW_BASELINES[-1])
+
+
+def stacked_band():
+    band = flat(DARK)
+    for text, baseline in zip(ROW_TEXTS, ROW_BASELINES):
+        write(band, text, baseline)
+    return band
+
+
+@pytest.mark.parametrize("band", [dialogue_band, spoken_band, stacked_band, tv_scene_with_objective,
+                                  lambda: write(flat(WHITE_SHIRT), DIALOGUE, ROW_BASELINES[-1]),
+                                  lambda: write(flat(DARKENED), "In Spanish: Show some respect!",
+                                                ROW_BASELINES[-1], level=DIM_TEXT)],
+                         ids=["dialogue", "coloured-name", "stacked", "tv-and-objective", "white-shirt", "dim-tv"])
+def test_centred_rows_are_identical_with_and_without_the_whole_band(band):
+    assert whole_band_rows(band()) == rows_in(band())
+
+
+def test_spoken_text_away_from_the_frame_centre_is_a_free_row():
+    shift = -420
+    rows = whole_band_rows(write(flat(DARK), DIALOGUE, ROW_BASELINES[-1], center_x=CENTER + shift))
+
+    first, last = ink_columns(DIALOGUE, ROW_BASELINES[-1])
+    assert len(rows) == 1
+    row = rows[0]
+    assert not row.sure and not row.trimmed  # olvasás előtt sosem takarjuk, és a tükrös vágás sem érinti
+    assert abs(row.ink_left - (first + shift)) <= 2 and abs(row.ink_right - (last + shift)) <= 2
+    assert abs(row.center_offset - shift) <= 2
+
+
+def test_side_text_on_the_lines_of_a_dialogue_row_is_a_row_of_its_own():
+    hud = "Moses Bucked You $825"
+    centred = rows_in(dialogue_band())
+
+    rows = whole_band_rows(write(dialogue_band(), hud, ROW_BASELINES[-1], center_x=CENTER - 470))
+
+    assert len(rows) == 2
+    free = [row for row in rows if row not in centred]
+    assert [row for row in rows if row in centred] == list(centred)
+    assert len(free) == 1 and not free[0].sure and free[0].ink_right < centred[0].ink_left
+
+
+def test_two_left_aligned_lines_of_a_side_card_are_two_rows():
+    band = flat(DARK)
+    left = 900
+    for text, baseline in (("Oh and if you're heading", ROW_BASELINES[1]), ("into Gellhorn, call me.", ROW_BASELINES[2])):
+        (width, _), _ = cv2.getTextSize(text, FONT, FONT_SCALE, 1)
+        write(band, text, baseline, center_x=left + width / 2)
+
+    rows = whole_band_rows(band)
+
+    assert len(rows) == 2
+    assert all(abs(row.ink_left - left) <= 3 and not row.sure for row in rows)
+    assert rows[0].ink_bottom <= rows[1].ink_top
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_free_text_cut_by_the_band_edge_is_dropped(side):
+    text = "Clients stiffed me when it was time"
+    (width, _), _ = cv2.getTextSize(text, FONT, FONT_SCALE, 1)
+    center_x = width / 2 - 30 if side == "left" else BAND_WIDTH - width / 2 + 30
+
+    assert whole_band_rows(write(flat(DARK), text, ROW_BASELINES[-1], center_x=center_x)) == ()
+
+
+def test_free_text_just_inside_the_band_edge_is_kept():
+    text = "Clients stiffed me when it was time"
+    (width, _), _ = cv2.getTextSize(text, FONT, FONT_SCALE, 1)
+    margin = 2 * WHOLE_BAND.edge_margin
+
+    assert len(whole_band_rows(write(flat(DARK), text, ROW_BASELINES[-1], center_x=margin + width / 2))) == 1
+
+
+def test_band_that_does_not_reach_the_frame_centre_still_has_its_rows_with_the_whole_band():
+    left_part = CENTER - 120  # a sáv bal része, a kép közepéig sem ér el
+    band = write(flat(DARK), DIALOGUE, ROW_BASELINES[-1], center_x=left_part / 2)[:, :left_part]
+
+    assert rows_in(band) == ()  # középső ablak nélkül a középső keresés semmit sem lát ...
+    rows = whole_band_rows(band)  # ... a teljes sáv szövege viszont megvan
+    assert len(rows) == 1 and not rows[0].sure
+
+
+def test_objective_row_off_the_centre_is_still_dropped_with_the_whole_band():
+    band = write(flat(DARK), "Find Dunk", OBJECTIVE_BASELINE, center_x=CENTER - 300)
+
+    assert whole_band_rows(band) != ()  # határ nélkül megvan ...
+    assert whole_band_rows(band, dialogue_bottom=DIALOGUE_BOTTOM) == ()  # ... a párbeszédsorok alatt nem
+
+
+@pytest.mark.parametrize("background", [lambda: flat(DARK), lambda: flat(WHITE_SHIRT), textured, checker],
+                         ids=["dark", "white-shirt", "textured", "checker"])
+def test_band_without_text_has_no_rows_with_the_whole_band(background):
+    assert whole_band_rows(background()) == ()
+
+
+def white_blob_off_centre():
+    band = flat(DARK)
+    cv2.rectangle(band, (300, 110), (600, 150), (255, 255, 255), -1)
+    cv2.rectangle(band, (297, 107), (603, 153), (0, 0, 0), 3)
+    return band
+
+
+def licence_plate_off_centre():
+    band = flat(DARK)
+    cv2.rectangle(band, (330, 105), (470, 150), (225, 225, 225), -1)
+    return write(band, "BM472H", ROW_BASELINES[-1], level=20, outline=0, scale=1.0, center_x=400)
+
+
+@pytest.mark.parametrize("band", [white_blob_off_centre, licence_plate_off_centre,
+                                  lambda: write(flat(MID_GREY, noise=5), DIALOGUE, ROW_BASELINES[-1], outline=0,
+                                                center_x=CENTER - 420)],
+                         ids=["white-blob", "dark-plate-letters", "no-outline"])
+def test_non_subtitle_shapes_away_from_the_centre_are_not_free_rows(band):
+    assert whole_band_rows(band()) == ()
+
+
+def test_free_rows_appear_in_the_mask_of_the_detection():
+    band = write(dialogue_band(), DIALOGUE, ROW_BASELINES[1], center_x=CENTER - 420)
+
+    detection = detect(band, BAND_LEFT, FRAME_WIDTH, WHOLE_BAND)
+
+    assert len(detection.rows) == 2
+    assert all(cv2.countNonZero(detection.core[row.ink_top:row.ink_bottom, row.ink_left:row.ink_right]) == row.pixels
+               for row in detection.rows)
+
+
+def test_words_trimmed_off_a_centred_row_do_not_come_back_as_a_free_row():
+    # Valós eset (frames4): a középső sor tükrös vágása levágta a sor végét, a szabad menet külön sornak vette
+    first, last = ink_columns(DIALOGUE, ROW_BASELINES[-1])
+    tail = "and then some"
+    (tail_width, _), _ = cv2.getTextSize(tail, FONT, FONT_SCALE, 1)
+    band = write(dialogue_band(), tail, ROW_BASELINES[-1], center_x=last + 14 + tail_width / 2)
+    centred = rows_in(band)
+    assert len(centred) == 1 and centred[0].trimmed
+
+    assert whole_band_rows(band) == centred
+
+
+def test_two_side_texts_on_the_same_lines_far_left_and_far_right_are_two_free_rows():
+    # Egy képsoron több szöveg is állhat: a szabad sorok csak akkor ütköznek, ha az oszlopaik is fedik egymást
+    band = write(flat(DARK), DIALOGUE, ROW_BASELINES[-1], center_x=320)
+    write(band, "Lucia: Where are you going?", ROW_BASELINES[-1], center_x=BAND_WIDTH - 320)
+
+    rows = whole_band_rows(band)
+
+    assert len(rows) == 2
+    left, right = rows
+    assert left.ink_right < CENTER < right.ink_left
+    assert not left.sure and not right.sure
+    assert left.ink_top < right.ink_bottom and right.ink_top < left.ink_bottom  # ugyanazokon a képsorokon
+
+
+def _found_row(left, right, *, top=200, bottom=225, sure=False, dim=False):
+    from gta_felirat.row_geometry import Row
+    return Row(left - 7, top - 4, right + 5, bottom + 4, left, top, right, bottom, 1000, 10.0, 2.0,
+               (left + right) / 2.0 - 845.0, trimmed=dim, sure=sure, dim=dim)
+
+
+def test_dim_pass_does_not_replace_the_white_row_with_its_own_narrower_copy():
+    # A névvel együtt megtalált (nem biztos) fehér sort a halvány menet a színes név nélkül, a képközépre
+    # tükrözve levágva találja meg újra: ha az nyerne, a név balra, a mondat vége jobbra kilógna a takarásból
+    from gta_felirat.row_detector import dim_replaces_white
+
+    white = (_found_row(685, 1004),)
+    narrower_dim = (_found_row(738, 954, sure=True, dim=True),)
+
+    assert not dim_replaces_white(white, narrower_dim)
+
+
+def test_sure_dim_row_elsewhere_still_replaces_an_unsure_white_row():
+    from gta_felirat.row_detector import dim_replaces_white
+
+    white_blob = (_found_row(700, 990, top=40, bottom=60),)
+    tv_line = (_found_row(720, 970, sure=True, dim=True),)
+
+    assert dim_replaces_white(white_blob, tv_line)
+    assert dim_replaces_white((), tv_line)
+    assert not dim_replaces_white(white_blob, ())
+
+
+def test_white_row_kept_over_its_narrower_dim_copy_takes_over_its_sureness():
+    # A halvány menet biztosnak látta ugyanazt a sort: a szélesebb fehér sor is takarható olvasás előtt
+    from gta_felirat.row_detector import keep_white_rows
+
+    white = (_found_row(685, 1004),)
+    dim = (_found_row(738, 954, sure=True, dim=True),)
+
+    (kept,) = keep_white_rows(white, dim)
+
+    assert (kept.ink_left, kept.ink_right, kept.sure, kept.dim) == (685, 1004, True, False)
+
+
+def test_white_row_without_a_sure_dim_copy_stays_unsure():
+    from gta_felirat.row_detector import keep_white_rows
+
+    white = (_found_row(685, 1004), _found_row(700, 990, top=40, bottom=60))
+    dim = (_found_row(738, 954, dim=True), _found_row(720, 970, top=100, bottom=120, sure=True, dim=True))
+
+    assert [row.sure for row in keep_white_rows(white, dim)] == [False, False]
+
+
+def test_tall_white_blob_around_a_sure_dim_line_does_not_take_its_place():
+    # Fehér ruhafolt a tévéfelirat mögött: magasabb, mint a sor, nem ugyanaz a sor; a halvány sor marad
+    from gta_felirat.row_detector import dim_replaces_white, keep_white_rows
+
+    blob = (_found_row(600, 1100, top=185, bottom=250),)
+    tv_line = (_found_row(720, 970, sure=True, dim=True),)
+
+    assert dim_replaces_white(blob, tv_line)
+    assert not keep_white_rows(blob, tv_line)[0].sure

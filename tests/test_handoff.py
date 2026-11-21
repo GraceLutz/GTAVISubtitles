@@ -430,6 +430,18 @@ def test_new_window_size_starts_with_new_rows_and_is_announced_at_once():
     assert emptied.snapshot.rows == () and watch.desk.wakes == wakes_before + 2
 
 
+def test_switching_the_row_finder_starts_new_rows_without_reusing_an_old_id():
+    watch = Watch()
+    before = [watch.capture(found(UPPER, "a"), found(LOWER, "b")) for _ in range(3)][-1]
+    old_ids = {row.row_id for row in before.snapshot.rows}
+
+    watch.watcher.set_finder(RowFinder(watch.detector, same_pixels))
+    after = watch.capture(found(LOWER, "b"))
+
+    (row,) = after.snapshot.rows
+    assert row.row_id not in old_ids and row.stable_captures == 1
+
+
 def test_detector_failure_is_reported_once_and_the_watcher_keeps_working():
     watch = Watch()
     watch.detector.error = ValueError("band must be an 8-bit BGR image")

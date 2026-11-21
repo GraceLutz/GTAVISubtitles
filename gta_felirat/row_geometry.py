@@ -8,6 +8,12 @@ feliratsort a kép közepére igazít, erre épül a mérés:
 3. a méret, a középre igazítás, a festettség és a vonalvastagság dönti el, hogy feliratsor-e, és
    olyan biztosan az-e, hogy olvasás nélkül, első látásra eltakarható (Row.sure).
 
+A sáv többi szövege (find_free_rows, csak ha a teljes sávot nézzük): a játék máshova is írhat szöveget
+(oldalra, más sorba), ezért a középső sorokon kívül a sáv minden festett csoportja külön sorjelölt, és
+a saját közepéhez mérjük; nincs középre igazítási kapu, tükrös vágás és névkiterjesztés. Az ilyen sor
+sosem biztos (olvasás előtt nem takarjuk), és a sáv széle által elvágott szöveget eldobjuk: azt úgysem
+lehetne helyesen elolvasni.
+
 A küszöbök a row_detector.Params mért értékei; a sorok koordinátái a sáv saját koordinátái.
 """
 
@@ -18,6 +24,8 @@ from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
+
+from .fragment_filter import reaches_band_edge
 
 if TYPE_CHECKING:
     from .row_detector import Measures
@@ -101,6 +109,33 @@ def find_rows(core: np.ndarray, parts: list[Span], measures: Measures, dim: bool
     return _drop_overlaps(rows)
 
 
+def find_free_rows(core: np.ndarray, measures: Measures) -> tuple[Row, ...]:
+    """A sáv szabad (nem középre igazított) sorai fentről, balról jobbra; core: a teljes sáv betűmag-maszkja,
+    a középső sorok helye már kitörölve.
+
+    Egy képsoron több sor is lehet: minden festett oszlopcsoport külön jelölt. Az egész sávra húzott
+    sorprofil a különböző magasságban álló szövegeket összemosná, ezért a jelölteket oszlopcsoportonként keressük.
+    """
+    max_gap = measures.px(measures.params.max_gap)
+    rows: list[Row] = []
+    for group in _groups(_column_ink(core, (0, core.shape[0])), max_gap):
+        for part in seed_parts(core[:, group[0]:group[1]], measures):
+            for ink in _free_inks(core, part, group, measures):
+                row = _judge(core, ink, measures, dim=False, free=True)
+                if (row is not None and _is_dialogue_row(row, measures.dialogue_bottom)
+                        and not _is_cut(row, core, measures)):
+                    rows.append(row)
+    return _drop_overlaps(rows, by_columns=True)
+
+
+def _is_cut(row: Row, core: np.ndarray, measures: Measures) -> bool:
+    """A sáv széle elvágta-e a szabad sort: a kitömött doboza a sáv széléhez edge_margin-nál közelebb ér.
+
+    Ugyanaz a doboz és ugyanaz a mérték, amellyel a pipeline is mér (row_finder.band_edge_margin): amit
+    a kereső megtart, azt a pipeline sem dobja el a sáv széle miatt, az olvasás nem megy kárba."""
+    return reaches_band_edge((row.left, row.right), (0, core.shape[1]), measures.params.edge_margin * measures.scale)
+
+
 def _runs(flags: np.ndarray, max_hole: int) -> list[Span]:
     """Az igaz értékek futamai; a legfeljebb max_hole hosszú lyukakat áthidaljuk."""
     index = np.flatnonzero(flags)
@@ -156,6 +191,11 @@ def _central_group(column_ink: np.ndarray, window: Span, max_gap: int) -> Span |
             if ink > best_ink:
                 best, best_ink = (left, right), ink
     return best
+
+
+def _groups(column_ink: np.ndarray, max_gap: int) -> list[Span]:
+    """Minden festett oszlopcsoport balról jobbra (a legfeljebb max_gap széles réseket áthidalva)."""
+    return _runs(column_ink > 0, max_gap)
 
 
 def _full_height(core: np.ndarray, part: Span, extent: Span, max_height: int) -> Span:
@@ -247,6 +287,30 @@ def _ink_of(core: np.ndarray, part: Span, measures: Measures, named: np.ndarray 
     return _Ink(lines, extent, int(column_ink[extent[0]:extent[1]].sum()), trimmed, wider is not None)
 
 
+def _free_inks(core: np.ndarray, part: Span, within: Span, measures: Measures) -> list[_Ink]:
+    """A jelölt képsorain a within oszlopaiba eső minden festett csoport, külön kimérve."""
+    column_ink = _column_ink(core, part)
+    inks = (_free_ink_of(core, part, group, measures)
+            for group in _groups(column_ink, measures.px(measures.params.max_gap))
+            if group[1] > within[0] and group[0] < within[1])
+    return [ink for ink in inks if ink is not None]
+
+
+def _free_ink_of(core: np.ndarray, part: Span, extent: Span, measures: Measures) -> _Ink | None:
+    """Egy szabad csoport festett kiterjedése (mint az _ink_of, név és tükrös vágás nélkül); None, ha túl kicsi.
+
+    A sáv széle által elvágott szöveget a kész sor dobozán szűrjük ki (_is_cut)."""
+    params = measures.params
+    lines = _full_height(core, part, extent, measures.px(params.row_max_height))
+    column_ink = _column_ink(core, lines)
+    if lines != part:
+        extent = _central_group(column_ink, extent, measures.px(params.max_gap)) or extent
+    if (lines[1] - lines[0] < measures.px(params.row_min_height)
+            or extent[1] - extent[0] < measures.px(params.row_min_width)):
+        return None
+    return _Ink(lines, extent, int(column_ink[extent[0]:extent[1]].sum()), trimmed=False)
+
+
 def _run_starts(zone: np.ndarray) -> int:
     """Hány vízszintes pixelfutam kezdődik a kivágásban (a bal szélén kezdődők nélkül)."""
     if zone.shape[1] < 2:
@@ -263,13 +327,16 @@ def _strokes(core: np.ndarray, ink: _Ink) -> float:
     return _run_starts(core[first:last, ink.columns[0]:ink.columns[1]]) / float(last - first)
 
 
-def _judge(core: np.ndarray, ink: _Ink, measures: Measures, dim: bool) -> Row | None:
-    """A kimért jelölt sorként; None, ha a helye, a festettsége vagy a vonalvastagsága nem feliraté."""
+def _judge(core: np.ndarray, ink: _Ink, measures: Measures, dim: bool, free: bool = False) -> Row | None:
+    """A kimért jelölt sorként; None, ha a helye, a festettsége vagy a vonalvastagsága nem feliraté.
+
+    free: a sáv szabad sora; a helyét nem a kép közepéhez mérjük, és sosem biztos (olvasás előtt nem takarjuk).
+    """
     params, scale, px = measures.params, measures.scale, measures.px
     (top, bottom), (left, right) = ink.lines, ink.columns
     height, width = bottom - top, right - left
     offset = (left + right) / 2.0 - measures.center
-    if abs(offset) > params.accept_offset * scale:
+    if not free and abs(offset) > params.accept_offset * scale:
         return None
     fill = ink.pixels / float(height * width)
     strokes = _strokes(core, ink)
@@ -277,7 +344,7 @@ def _judge(core: np.ndarray, ink: _Ink, measures: Measures, dim: bool) -> Row | 
     run = ink.pixels / float(max(1, _run_starts(core[top:bottom, left:right]))) / scale
     if not params.min_fill <= fill <= params.max_fill or density < params.min_stroke_density or run > params.max_run:
         return None
-    sure = (abs(offset) <= params.sure_offset * scale and width >= px(params.sure_min_width)
+    sure = (not free and abs(offset) <= params.sure_offset * scale and width >= px(params.sure_min_width)
             and px(params.sure_min_height) <= height <= px(params.sure_max_height)
             and params.sure_min_fill <= fill <= params.sure_max_fill
             and density >= params.sure_min_stroke_density and run <= params.sure_max_run)
@@ -288,10 +355,21 @@ def _judge(core: np.ndarray, ink: _Ink, measures: Measures, dim: bool) -> Row | 
                strokes=strokes, run=run, center_offset=offset, trimmed=ink.trimmed, sure=sure, dim=dim)
 
 
-def _drop_overlaps(rows: list[Row]) -> tuple[Row, ...]:
-    """Két sor nem osztozhat képsorokon: a több magpixelű marad; az eredmény fentről lefelé rendezett."""
+def _drop_overlaps(rows: list[Row], by_columns: bool = False) -> tuple[Row, ...]:
+    """Két ütköző sorból a több magpixelű marad; az eredmény fentről lefelé (azonos tetőnél balról jobbra) rendezett.
+
+    A középső sorok nem osztozhatnak képsorokon. by_columns: a szabad sorok csak akkor ütköznek, ha az
+    oszlopaik is fedik egymást, hiszen egy képsoron több szöveg is állhat egymás mellett.
+    """
     kept: list[Row] = []
     for row in sorted(rows, key=lambda r: -r.pixels):
-        if all(row.ink_bottom <= other.ink_top or row.ink_top >= other.ink_bottom for other in kept):
+        if not any(overlaps(row, other, by_columns) for other in kept):
             kept.append(row)
-    return tuple(sorted(kept, key=lambda r: r.top))
+    return tuple(sorted(kept, key=lambda r: (r.top, r.left)))
+
+
+def overlaps(row: Row, other: Row, by_columns: bool = True) -> bool:
+    """Fedik-e egymást a két sor festett részei (by_columns=False: elég, ha a képsoraik fedik egymást)."""
+    if row.ink_bottom <= other.ink_top or row.ink_top >= other.ink_bottom:
+        return False
+    return not by_columns or (row.ink_left < other.ink_right and other.ink_left < row.ink_right)

@@ -111,3 +111,15 @@ def test_curly_quotes_and_full_width_punctuation_are_read_as_plain_ascii():
 
     assert _plain_punctuation("your “little bird”？ ") == 'your "little bird"?'
     assert _plain_punctuation("It’s me.") == "It's me."
+
+
+# --- a sáv a kép középső részén kívül -------------------------------------------
+
+def test_band_beside_the_middle_part_is_searched_whole_instead_of_as_an_empty_crop():
+    region = Region(left=0.80, top=0.70, right=0.98, bottom=0.98)  # a 0,22–0,78 középső részen kívül
+    area = region_to_box(region, WIDTH, HEIGHT)
+    engine = FakeEngine({})
+
+    SubtitleReader(region, 0.6, engine).detect_rows(np.full((area.height, area.width, 3), 255, np.uint8), area)
+
+    assert engine.detected_widths == [area.width]

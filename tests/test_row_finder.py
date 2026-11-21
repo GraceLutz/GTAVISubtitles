@@ -1,10 +1,11 @@
-from band_drawing import AREA, DIALOGUE_BASELINE, FRAME, OBJECTIVE_BASELINE, band_with
+from band_drawing import AREA, CENTER_X, DIALOGUE_BASELINE, FRAME, OBJECTIVE_BASELINE, UPPER_BASELINE, band_with
 
 from gta_felirat.fragment_filter import MIN_WHITE_FRACTION
-from gta_felirat.row_finder import MIN_FRAME_WIDTH, ROW_FINDER, is_wide_enough
+from gta_felirat.row_finder import MIN_FRAME_WIDTH, ROW_FINDER, is_wide_enough, make_row_finder
 
 TROUBLE = "We ain't lookin' for trouble, okay?"
 HOW = "How about you, how you doin' now?"
+SIDE_ROW_REACH = 20  # ennyi képsorral az alapvonal fölött és alatt: a felső sor betűi, a párbeszédsor még nem
 
 
 def test_dialogue_row_is_found_in_frame_coordinates_as_a_sure_subtitle_row():
@@ -49,3 +50,43 @@ def test_only_a_wide_enough_picture_is_read_by_rows():
     assert is_wide_enough(1920)
     assert is_wide_enough(MIN_FRAME_WIDTH)
     assert not is_wide_enough(1280)
+
+
+def side_text_band():
+    """Középre igazított párbeszédsor, és egy szöveg a sáv bal oldalán, a fölötte lévő sorban."""
+    band = band_with((TROUBLE, DIALOGUE_BASELINE))
+    side = band_with((HOW, UPPER_BASELINE))
+    shift = CENTER_X // 2  # a felső sor közepe a sáv bal negyedébe kerül
+    lines = slice(UPPER_BASELINE - SIDE_ROW_REACH, UPPER_BASELINE + SIDE_ROW_REACH)
+    band[lines, :-shift] = side[lines, shift:]
+    return band
+
+
+def test_the_default_finder_sees_only_the_centred_row():
+    rows = ROW_FINDER.detect(side_text_band(), AREA, FRAME)
+
+    assert len(rows) == 1 and rows[0].sure
+
+
+def test_the_whole_band_finder_also_finds_text_away_from_the_centre_and_never_sure():
+    rows = make_row_finder(whole_band=True).detect(side_text_band(), AREA, FRAME)
+
+    assert len(rows) == 2
+    side, centred = rows
+    assert side.box.right < FRAME[0] // 2 and not side.sure
+    assert centred.sure and centred.box.left < FRAME[0] // 2 < centred.box.right
+
+
+def test_the_whole_band_finder_knows_a_side_row_again_on_the_next_capture():
+    finder = make_row_finder(whole_band=True)
+    first = finder.detect(side_text_band(), AREA, FRAME)[0]
+    second = finder.detect(side_text_band(), AREA, FRAME)[0]
+
+    assert finder.is_same_row(first.signature, second.signature)
+
+
+def test_the_finder_without_the_whole_band_is_the_default_one():
+    band = side_text_band()
+
+    assert ([row.box for row in make_row_finder(whole_band=False).detect(band, AREA, FRAME)]
+            == [row.box for row in ROW_FINDER.detect(band, AREA, FRAME)])

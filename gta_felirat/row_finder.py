@@ -2,16 +2,20 @@
 
 A row_tracker csak ennyit tud a sorokról: hol állnak, feliratszínűek-e, biztos-e bennük a kereső, és
 két rögzítés sora ugyanazokból a képpontokból áll-e. Ezt adja ez a modul, a teljes kép koordinátáiban.
+A make_row_finder(whole_band=True) sorkeresője a sáv középen kívüli szövegét is visszaadja (sosem biztos sorként).
 Mindkét függvény azon a szálon fut, amelyik a sávokat feldolgozza; a sávot nem módosítják.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
+from functools import partial
+
 import numpy as np
 
 from .fragment_filter import DIALOGUE_BOTTOM_RATIO, white_fraction
 from .ocr import Box
-from .row_detector import REFERENCE_WIDTH, detect
+from .row_detector import DEFAULT_PARAMS, REFERENCE_WIDTH, Params, detect
 from .row_signature import SAME, Signature, compare, row_signature
 from .row_tracker import DetectedRow, RowFinder
 
@@ -27,10 +31,12 @@ def is_wide_enough(frame_width: int) -> bool:
     return frame_width >= MIN_FRAME_WIDTH
 
 
-def find_rows(band: np.ndarray, area: Box, frame_size: tuple[int, int]) -> list[DetectedRow]:
+def find_rows(band: np.ndarray, area: Box, frame_size: tuple[int, int],
+              params: Params = DEFAULT_PARAMS) -> list[DetectedRow]:
     """A sáv párbeszédsorai fentről lefelé, a teljes kép koordinátáiban (a küldetésutasítás sora nélkül)."""
     frame_width, frame_height = frame_size
-    detection = detect(band, area.left, frame_width, dialogue_bottom=DIALOGUE_BOTTOM_RATIO * frame_height - area.top)
+    detection = detect(band, area.left, frame_width, params,
+                       dialogue_bottom=DIALOGUE_BOTTOM_RATIO * frame_height - area.top)
     center_x = frame_width / 2 - area.left
     scale = frame_width / REFERENCE_WIDTH
     rows = []
@@ -47,4 +53,18 @@ def is_same_row(old: _Signed, new: _Signed) -> bool:
     return compare(old[0], new[0], new[1]) == SAME
 
 
-ROW_FINDER = RowFinder(find_rows, is_same_row)
+ROW_FINDER = RowFinder(find_rows, is_same_row)  # csak a kép közepére igazított sorok
+WHOLE_BAND_PARAMS = replace(DEFAULT_PARAMS, whole_band=True)
+# A sáv középen kívüli szövege is sor (sosem biztos sorként)
+WHOLE_BAND_ROW_FINDER = RowFinder(partial(find_rows, params=WHOLE_BAND_PARAMS), is_same_row)
+
+
+def band_edge_margin(frame_width: float) -> float:
+    """A sáv szélétől ennyi képpontnál közelebb érő szabad sort a sáv széle vágta el: a kereső szabálya
+    (row_geometry), a kitömött sordobozra, a képszélességhez igazítva. A pipeline is ezzel mér."""
+    return WHOLE_BAND_PARAMS.edge_margin * frame_width / REFERENCE_WIDTH
+
+
+def make_row_finder(whole_band: bool) -> RowFinder:
+    """A soralapú olvasás sorkeresője; whole_band: config.whole_band_text (a sáv középen kívüli szövege is sor)."""
+    return WHOLE_BAND_ROW_FINDER if whole_band else ROW_FINDER

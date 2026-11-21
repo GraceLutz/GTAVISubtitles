@@ -160,9 +160,12 @@ class RowTracker:
         self._ids = itertools.count(1)
         self._updated_at = float("-inf")
 
-    def reset(self) -> None:
-        """Új ablakméret vagy sáv: a régi sorok nem érvényesek. Az azonosítók ezután sem ismétlődnek."""
+    def reset(self, is_same_row: Callable[[Any, Any], bool] | None = None) -> None:
+        """Új ablakméret, sáv vagy sorkereső: a régi sorok nem érvényesek. Az azonosítók ezután sem ismétlődnek.
+        is_same_row: az új sorkereső összehasonlítója; None: a mostani marad."""
         self._tracks = ()
+        if is_same_row is not None:
+            self._is_same_row = is_same_row
 
     def update(self, detected: Sequence[DetectedRow], now: float) -> tuple[RowObs, ...]:
         """Egy rögzítés sorai → a képernyőn lévő (és a türelmi idejüket töltő) sorok, fentről lefelé."""

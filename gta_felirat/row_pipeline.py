@@ -10,6 +10,14 @@ A régi út (SubtitlePipeline.submit_band / poll) minden olvasásnál az egész 
 Hogy melyik sor felirat, hogyan fordítjuk, hová kerül a fordítás, és meddig takarjuk a még le nem
 fordított sort, az ugyanaz, mint a régi úton.
 
+A sáv egészét figyelve (whole_band_text) a kép közepétől távoli szöveg is felirat lehet: a játék máshová
+is írhat szöveget, és egyszerre több helyre is. Az ilyen szöveget helyenként (tömbönként: a két sorba
+tördelt mondat egy megszólalás) a középen álló felirattól függetlenül szűrjük, ugyanazzal a
+szövegszűrő-lánccal, de csak „Név: szöveg” megszólalás lehet (a kijelző oldalt álló szövege, pl. helynév
+vagy hívásértesítés, nem az), és csak stabil képpontokkal vagy álló képen kerül a felirat mellé: így a
+bizonytalansága nem tartja vissza a középső felirat fordítását. Ha átmegy, a saját angol sorára fordítjuk,
+akár a középső felirat mellé is. Olvasás előtt sosem takarjuk: a kereső sosem biztos benne (row.sure False).
+
 Szálak: a RowPipeline minden metódusát a megjelenítési (Tk) szál hívja, és csak ez a szál írja az
 állapotát. A munkaszálak (handoff.BandWatcher, handoff.RowRecognizer) megváltoztathatatlan
 eredményeket tesznek a handoff.Inbox-ba; a Tk-szál kiüríti, és átadja a receive()-nek. Más szál
@@ -34,6 +42,7 @@ from .config import AppConfig
 from .fragment_filter import DIALOGUE_BOTTOM_RATIO, MIN_WHITE_FRACTION, Fragment, FrameCenter, select_subtitle
 from .line_placement import build_shown, match_lines
 from .ocr import Box, OcrLine, SubtitleReader, is_spoken_line, looks_like_subtitle, spoken_lines, union_box
+from .row_finder import band_edge_margin
 from .row_tracker import STABLE_CAPTURES, BandSnapshot, RowObs, RowText, is_same_place, overlaps
 from .subtitle_pipeline import SubtitlePipeline
 from .subtitle_tracker import NewSubtitle, SubtitleCleared
@@ -62,6 +71,31 @@ class RowPathStats:
     stale_texts: int = 0  # közben eltűnt sor szövege: eldobtuk
     stale_snapshots: int = 0  # más ablakméretre készült pillanatkép: eldobtuk
     inherited_texts: int = 0  # ennyi új sor örökölte az előtte ugyanott álló sor szövegét
+
+
+def _is_stable(row: RowObs) -> bool:
+    """A sor képpontjai már elég rögzítésen át nem változtak: a szövege második olvasás nélkül is végleges."""
+    return row.stable_captures >= STABLE_CAPTURES
+
+
+def free_blocks(fragments: list[Fragment], kept: list[Fragment], center: FrameCenter) -> list[list[Fragment]]:
+    """A kép közepétől távoli, a középső feliratba nem tartozó szöveg helyenként, tömbönként.
+
+    Ugyanazok a szűrők, mint a select_subtitle-ben (feliratszín, kijelző-felirat, a küldetésutasítás
+    zónája), és a sáv széle által elvágott szöveg (csonka szavak) kimarad. Egy tömb egy helyen álló szöveg:
+    a két sorba tördelt mondat egy tömb, két helyen álló szöveg két tömb. A középen álló, de a középső
+    tömbbe nem tartozó sort ugyanúgy elhagyjuk, mint eddig.
+    """
+    taken = {id(fragment) for fragment in kept}
+    anywhere = replace(center, anywhere=True)
+    pool = [fragment for fragment in fragments if id(fragment) not in taken
+            and not center.is_near(fragment.box) and not center.touches_band_edge(fragment.box)]
+    blocks = []
+    while block := select_subtitle(pool, anywhere):  # minden kör legalább egy darabot kivesz: véges
+        blocks.append(block)
+        chosen = {id(fragment) for fragment in block}
+        pool = [fragment for fragment in pool if id(fragment) not in chosen]
+    return blocks
 
 
 class RowPipeline(SubtitlePipeline):
@@ -182,9 +216,9 @@ class RowPipeline(SubtitlePipeline):
     def _refresh(self, pictured_at: float, now: float) -> None:
         """A sorok és szövegeik mostani állásából felirat lesz; pictured_at: a legutóbbi kép ideje."""
         self._texts = self._unexpired_texts(now)
-        lines, used = self._assemble()
         is_still = now - pictured_at >= STILL_SECONDS
-        confirmed = is_still or all(row.stable_captures >= STABLE_CAPTURES for row in used)
+        lines, used, is_free_waiting = self._assemble(is_still)
+        confirmed = is_still or all(_is_stable(row) for row in used)
         unread = tuple((row.row_id, row.box, self._can_hide_early(row))
                        for row in self._rows if row.row_id not in self._texts)
         state = (lines, confirmed, unread)
@@ -194,7 +228,7 @@ class RowPipeline(SubtitlePipeline):
         else:
             self._let_time_pass(bool(lines), now)
         self._is_on_screen = bool(lines)  # csak a most is látszó sorokból áll (lásd _assemble)
-        deadline = self._deadline(state, pictured_at, now)
+        deadline = self._deadline(state, pictured_at, now, is_free_waiting)
         # A semmit sem változtató képkocka (pl. 30 kép/mp-es videóablak álló jeleneten) nem tolhatja
         # későbbre a még esedékes ellenőrzést, különben az eltűnt felirat fordítása sosem tűnne el
         is_pending = now < self._next_deadline
@@ -206,8 +240,12 @@ class RowPipeline(SubtitlePipeline):
         return {row_id: text for row_id, text in self._texts.items()
                 if not (text.provisional and row_id in expired)}
 
-    def _assemble(self) -> tuple[tuple[OcrLine, ...], tuple[RowObs, ...]]:
-        """(az elfogadott feliratsorok, a sorok, amelyekből lettek): a SubtitleReader.read_band szűrőivel."""
+    def _assemble(self, is_still: bool) -> tuple[tuple[OcrLine, ...], tuple[RowObs, ...], bool]:
+        """(az elfogadott feliratsorok, a sorok, amelyekből lettek, vár-e máshol álló szöveg a stabilitásra):
+        a SubtitleReader.read_band szűrőivel.
+
+        Előbb a középen álló felirat (mint eddig), aztán ha a sáv egészét figyeljük, a máshol álló szöveg
+        tömbönként: ez a középső felirat mellé, a saját helyére kerül. is_still: áll a kép (lásd _refresh)."""
         min_score = self._config.min_text_score
         # Csak a most is látszó sor számít: a türelmi időben csak emlékezett sor (missing > 0) nem tartja
         # életben a feliratot (ha utána nem jön több kép, mert áll a jelenet, a fordítás örökre kint maradna).
@@ -217,18 +255,43 @@ class RowPipeline(SubtitlePipeline):
                    and self._texts[row.row_id].is_legible(min_score)}
         fragments = [Fragment(self._texts[row.row_id].text.strip(), box, row.whiteness)
                      for box, row in legible.items()]
-        kept = select_subtitle(fragments, self._frame_center())
-        lines = spoken_lines([(fragment.text, fragment.box) for fragment in kept])
+        center = self._frame_center()
+        kept = select_subtitle(fragments, center)
+        lines = self._subtitle_lines(kept)
+        used = list(kept) if lines else []
+        is_free_waiting = False
+        if self._config.whole_band_text:
+            for block in free_blocks(fragments, kept, center):
+                free_lines = self._subtitle_lines(block, must_be_spoken=True)
+                if not free_lines:
+                    continue
+                if not (is_still or all(_is_stable(legible[fragment.box]) for fragment in block)):
+                    is_free_waiting = True  # a következő stabil képen, vagy ha áll a kép, kerül ki
+                    continue
+                lines += free_lines
+                used += block
+        return lines, tuple(legible[fragment.box] for fragment in used), is_free_waiting
+
+    def _subtitle_lines(self, fragments: list[Fragment], *, must_be_spoken: bool = False) -> tuple[OcrLine, ...]:
+        """A darabok megszólalásokká fűzve, ha a szövegük feliratnak tűnik; különben üres.
+
+        must_be_spoken: csak „Név: szöveg” megszólalás lehet, az only_spoken_lines beállítástól függetlenül."""
+        lines = spoken_lines([(fragment.text, fragment.box) for fragment in fragments])
         if not lines or not looks_like_subtitle(" ".join(line.text for line in lines)):
-            return (), ()
-        if self._config.only_spoken_lines and not is_spoken_line("\n".join(line.text for line in lines)):
-            return (), ()  # küldetésszöveg, tábla, menü: nem kimondott szöveg, nem fordítjuk
-        return lines, tuple(legible[fragment.box] for fragment in kept)
+            return ()
+        must_be_spoken = must_be_spoken or self._config.only_spoken_lines
+        if must_be_spoken and not is_spoken_line("\n".join(line.text for line in lines)):
+            return ()  # küldetésszöveg, tábla, menü: nem kimondott szöveg, nem fordítjuk
+        return lines
 
     def _frame_center(self) -> FrameCenter:
-        """A kép közepe és a párbeszédsorok alsó határa, a pillanatkép saját képméretéből."""
+        """A kép közepe, a párbeszédsorok alsó határa és a sáv két széle, a pillanatkép saját képméretéből."""
         width, height = self._frame_size
-        return FrameCenter(width / 2, width, DIALOGUE_BOTTOM_RATIO * height)
+        snapshot = self._snapshot
+        return FrameCenter(width / 2, width, DIALOGUE_BOTTOM_RATIO * height,
+                           band_left=snapshot.area.left if snapshot is not None else float("-inf"),
+                           band_right=snapshot.area.right if snapshot is not None else float("inf"),
+                           edge_margin=band_edge_margin(width))
 
     def _apply_rows(self, lines: tuple[OcrLine, ...], confirmed: bool, now: float) -> None:
         """Megváltozott a sorok állása: ugyanaz történik, mint a régi úton egy olvasás után, de stabil
@@ -260,13 +323,15 @@ class RowPipeline(SubtitlePipeline):
             self._forget_subtitle()
         self._follow_live_lines(now)
 
-    def _deadline(self, state: _State, pictured_at: float, now: float) -> float:
-        """Mikor kell akkor is ránézni az állapotra, ha semmi sem érkezik."""
+    def _deadline(self, state: _State, pictured_at: float, now: float, is_free_waiting: bool) -> float:
+        """Mikor kell akkor is ránézni az állapotra, ha semmi sem érkezik.
+
+        is_free_waiting: máshol álló szöveg vár arra, hogy a képpontjai stabilak legyenek (lásd _assemble)."""
         lines, confirmed, _unread = state
         waiting = [row for row in self._rows if row.row_id not in self._texts or self._texts[row.row_id].provisional]
         moments = [row.first_seen + EAGER_HIDE_SECONDS for row in waiting
                    if now - row.first_seen < EAGER_HIDE_SECONDS]  # lejár az olvasás előtti takarás
-        if lines and not confirmed:
+        if (lines and not confirmed) or is_free_waiting:
             moments.append(pictured_at + STILL_SECONDS)  # ha addig nem jön újabb kép, a mostani áll
         if (self.shown is not None and self.shown.hidden) or (not lines and self._tracker.current):
             moments.append(now + RECHECK_SECONDS)  # késő fordítás takarása, eltűnés utáni várakozás

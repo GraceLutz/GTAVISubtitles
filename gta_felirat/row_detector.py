@@ -17,6 +17,11 @@ igazítja középre). Sorjelöltet csak fehér szöveg adhat, a sor magassága i
 Előbb a fehér szöveget keressük; a tévéműsor halvány, szürke feliratát (a legvilágosabb pixelekhez
 igazított szinttel, mint a frosted_cover._text_level) csak akkor, ha nincs biztos fehér sor.
 
+A játék máshova is írhat szöveget (oldalra, más sorba, több helyre egyszerre). Params.whole_band esetén a
+fenti, változatlan középső keresés után egy második, „szabad” menet a sáv többi részét is átnézi (csak fehér
+betűre): ott minden festett csoport külön sor, a saját közepéhez mérve (row_geometry.find_free_rows). Ezek
+a sorok sosem biztosak, tehát olvasás előtt nem takarjuk őket; a középső sorok bármelyik módban ugyanazok.
+
 A küldetésutasítás („Find Dunk”) ugyanilyen betű, de a párbeszédsorok alatt, külön sorban áll; nem
 takarjuk és nem fordítjuk, ezért a dialogue_bottom alatti közepű sort a kereső nem adja vissza.
 
@@ -36,7 +41,7 @@ from functools import lru_cache
 import cv2
 import numpy as np
 
-from .row_geometry import Row, Span, find_rows, seed_parts
+from .row_geometry import Row, Span, find_free_rows, find_rows, overlaps, seed_parts
 
 __all__ = ["DEFAULT_PARAMS", "NOTHING", "REFERENCE_WIDTH", "Detection", "Params", "Row", "detect", "detect_rows",
            "to_frame"]
@@ -102,6 +107,15 @@ class Params:
     color_min_spread: int = 30
     # A névvel kiegészített sor legalább ilyen széles: a „Név: szó.” is az; a rendszám, egy színes folt nem
     named_min_width: float = 80.0
+    # A teljes sáv szövege: a középső sorok mellett a sáv többi fehér szövege is sor (lásd a modul leírását)
+    whole_band: bool = False
+    # A szabad sor kitömött doboza legalább ennyire marad el a sáv bal és jobb szélétől: a szélhez érőt
+    # a sáv széle elvágta (a telefon üzenetkártyája a jobb szélen), az úgysem olvasható helyesen.
+    # A pipeline is ezt az értéket használja (row_finder.band_edge_margin)
+    edge_margin: float = 12.0
+    # A középső sor képsorain álló szabad sor legalább ekkora réssel kezdődik a középső sor mellett: a közelebbi
+    # a középső sorról a tükrös vágással levágott vég (valós kockákon 5–25 px), a sor része, nem külön szöveg
+    side_gap: float = 40.0
 
 
 DEFAULT_PARAMS = Params()
@@ -158,15 +172,94 @@ def detect(band_bgr: np.ndarray, band_left: int, frame_width: float, params: Par
     if band_bgr.size == 0:
         return NOTHING
     measures = _measures(params, band_bgr.shape[1], frame_width / 2.0 - band_left, frame_width, dialogue_bottom)
-    white = _scan(band_bgr, _Tone(params.white_level, params.outline_level, dim=False), measures)
+    centred = _centred(band_bgr, measures)
+    # A szabad menet a középső döntés után fut: így a középső sorok (és a halvány menet választása) pontosan
+    # ugyanazok, mint nélküle
+    return _with_free_rows(band_bgr, centred, measures) if params.whole_band else centred
+
+
+def _centred(band: np.ndarray, measures: Measures) -> Detection:
+    """A kép közepére igazított sorok: előbb fehér, biztos fehér sor nélkül halvány (tévéfelirat) betűvel."""
+    params = measures.params
+    white = _scan(band, _white(params), measures)
     if any(row.sure for row in white.rows):
         return white
     # Nincs biztos fehér sor: halvány szöveget is keresünk (fehér folt ne takarhassa el a tévéfeliratot)
-    level = _text_level(band_bgr, params)
+    level = _text_level(band, params)
     if level >= params.white_level:
         return white  # világos jelenet: a fehér menet már mindent megnézett
-    dim = _scan(band_bgr, _Tone(level, params.dim_outline_level, dim=True), measures)
-    return dim if dim.rows and (not white.rows or any(row.sure for row in dim.rows)) else white
+    dim = _scan(band, _Tone(level, params.dim_outline_level, dim=True), measures)
+    if dim_replaces_white(white.rows, dim.rows):
+        return dim
+    kept = keep_white_rows(white.rows, dim.rows)
+    return white if kept == white.rows else replace(white, rows=kept)
+
+
+def dim_replaces_white(white: tuple[Row, ...], dim: tuple[Row, ...]) -> bool:
+    """A halvány menet sorai váltják-e a fehér menetéit.
+
+    Igen, ha fehér sor nincs, vagy a halvány menet biztos sort talált, amely nem egy fehér sor szűkebb
+    újratalálása. A színes nevet a halvány menet nem látja: a névvel együtt megtalált fehér sort név nélkül,
+    a képközépre tükrözve levágva találná meg újra, és akkor a név balra, a mondat vége jobbra kilógna a takarásból.
+    """
+    if not dim:
+        return False
+    if not white:
+        return True
+    return (any(row.sure for row in dim)
+            and not any(_lies_within(inner, outer) for inner in dim for outer in white))
+
+
+def keep_white_rows(white: tuple[Row, ...], dim: tuple[Row, ...]) -> tuple[Row, ...]:
+    """A megtartott fehér sorok; amelyikben a halvány menet biztos sort talált, az is biztos (olvasás előtt
+    takarható): ugyanaz a sor, csak a fehér menet a színes névvel együtt, teljes szélességben látta."""
+    return tuple(replace(row, sure=True) if not row.sure and any(other.sure and _lies_within(other, row)
+                                                                    for other in dim) else row
+                 for row in white)
+
+
+SAME_LINE_TOLERANCE_PX = 4  # a két menet ugyanannak a sornak a tetejét és alját ennyin belül méri
+
+
+def _lies_within(inner: Row, outer: Row) -> bool:
+    """inner ugyanaz a sor (teteje és alja egyezik), és oszlopai outer festett kiterjedésén belül vannak."""
+    same_line = (abs(inner.ink_top - outer.ink_top) <= SAME_LINE_TOLERANCE_PX
+                 and abs(inner.ink_bottom - outer.ink_bottom) <= SAME_LINE_TOLERANCE_PX)
+    return same_line and outer.ink_left <= inner.ink_left and inner.ink_right <= outer.ink_right
+
+
+def _white(params: Params) -> _Tone:
+    return _Tone(params.white_level, params.outline_level, dim=False)
+
+
+def _with_free_rows(band: np.ndarray, centred: Detection, measures: Measures) -> Detection:
+    """A középső eredmény kiegészítve a sáv többi fehér szövegével (a középső sorok érintetlenek).
+
+    Csak fehér betűt keresünk: a halvány szinttel a sáv szürke kijelzőszövegei (HUD, tévé) is sorok lennének.
+    """
+    tone = _white(measures.params)
+    core = _core_mask(band, tone, measures)
+    for row in centred.rows:  # a középső sorok helye (a kitömött dobozuk) már foglalt
+        core[row.top:row.bottom, row.left:row.right] = 0
+    gap = measures.px(measures.params.side_gap)
+    free = tuple(row for row in find_free_rows(core, measures)
+                 if not any(_is_cut_off(row, other, gap) for other in centred.rows))
+    if not free:
+        return centred
+    merged = np.zeros(band.shape[:2], np.uint8) if centred.core is None else centred.core.copy()
+    for row in free:  # a sorjelhez (row_signature) a szabad sor betűi is a közös maszkba kerülnek
+        lines, columns = slice(row.ink_top, row.ink_bottom), slice(row.ink_left, row.ink_right)
+        merged[lines, columns] = core[lines, columns]
+    merged.setflags(write=False)
+    rows = tuple(sorted(centred.rows + free, key=lambda r: (r.top, r.left)))
+    return Detection(rows, merged, centred.level if centred.rows else tone.level)
+
+
+def _is_cut_off(free: Row, centred: Row, gap: int) -> bool:
+    """A szabad sor a középső sor képsorain, gap-nél közelebb áll mellette: a középső sor levágott vége."""
+    if not overlaps(free, centred, by_columns=False):
+        return False
+    return max(centred.ink_left - free.ink_right, free.ink_left - centred.ink_right) < gap
 
 
 def detect_rows(band_bgr: np.ndarray, band_left: int, frame_width: float, params: Params = DEFAULT_PARAMS, *,

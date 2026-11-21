@@ -6,7 +6,7 @@ import time
 from dataclasses import replace
 
 import pytest
-from band_drawing import AREA, DIALOGUE_BASELINE, FRAME, band_with
+from band_drawing import AREA, CENTER_X, DIALOGUE_BASELINE, FRAME, band_with
 
 from gta_felirat import remote_play
 from gta_felirat.app_base import SubtitleAppBase
@@ -312,3 +312,40 @@ def test_stopping_ends_the_row_threads_and_closes_the_windows(make_bench):
     assert started and not any(thread.is_alive() for thread in started)
     assert bench.overlay.is_destroyed and bench.app._settings.is_closed
 
+
+
+def side_band(seed):
+    """A párbeszédsor a sáv bal felébe tolva: a kép közepén nincs felirat, csak a sáv egészét nézve látszik."""
+    centred = subtitle_band(seed)
+    band = band_with(seed=seed)
+    shift = CENTER_X // 2
+    band[:, :-shift] = centred[:, shift:]
+    return band
+
+
+def rows_seen(bench, seed):
+    """Egy új sáv a máshol álló sorral: a soralapú út sorai, ahogy a pipeline megkapta őket."""
+    bench.show(side_band(seed))
+    return bench.app._pipeline.snapshot.rows
+
+
+def test_row_path_looks_at_the_whole_band_as_the_config_says_also_after_a_change(make_bench):
+    bench = make_bench(whole_band_text=True)
+    bench.show(band_with())  # üres kép: a soralapú út bekapcsol
+
+    with_switch = rows_seen(bench, 1)
+    bench.app.apply_updates({"whole_band_text": False}, save=False)
+    switched_off = rows_seen(bench, 2)
+    bench.app.apply_updates({"whole_band_text": True}, save=False)
+    switched_on = rows_seen(bench, 3)
+
+    assert [row.sure for row in with_switch] == [False]  # a máshol álló sor: megvan, de sosem biztos
+    assert switched_off == ()
+    assert [row.sure for row in switched_on] == [False]
+
+
+def test_row_path_sees_only_the_centre_when_the_config_says_so(make_bench):
+    bench = make_bench(whole_band_text=False)
+    bench.show(band_with())
+
+    assert rows_seen(bench, 1) == ()

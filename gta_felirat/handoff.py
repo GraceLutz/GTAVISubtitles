@@ -218,7 +218,8 @@ class BandWatcher:
 
     def __init__(self, finder: RowFinder, inbox: Inbox, jobs: LatestBox[BandSnapshot]) -> None:
         """jobs: a felismerő postaládája (RowRecognizer.submit egy start_worker szálon)."""
-        self._detect = finder.detect
+        self._finder = finder  # a kért sorkereső; bármely szál cserélheti (set_finder)
+        self._active = finder  # amelyikkel a feldolgozó szál most keres
         self._tracker = RowTracker(finder.is_same_row)
         self._inbox = inbox
         self._jobs = jobs
@@ -237,13 +238,23 @@ class BandWatcher:
         else:
             self._failures.succeeded()
 
+    def set_finder(self, finder: RowFinder) -> None:
+        """Más sorkereső (pl. a sáv egészét is nézzük-e); a következő sávtól él. Bármely szálból hívható:
+        egyetlen értékadás, a csere maga a feldolgozó szálon történik."""
+        self._finder = finder
+
     def process(self, frame: BandFrame) -> BandSnapshot:
         """Egy sáv → pillanatkép a Tk-szálnak, és munka a felismerőnek, ha új sor látszik."""
+        finder = self._finder
+        if finder is not self._active:  # más sorkereső: a régi sorai mást jelentenek, újrakezdjük a követést
+            # Ugyanaz a követő marad, hogy az új sorok ne kapjanak régi azonosítót (egy késő olvasat nem tévedhet át)
+            self._active, self._geometry = finder, None
+            self._tracker.reset(finder.is_same_row)
         geometry = (frame.area, frame.frame_size)
         if geometry != self._geometry:  # átméretezték az ablakot, vagy más a figyelt sáv: a régi sorok érvénytelenek
             self._geometry, self._marker, self._visible = geometry, None, frozenset()
             self._tracker.reset()
-        rows = self._tracker.update(self._detect(frame.image, frame.area, frame.frame_size), frame.captured_at)
+        rows = self._tracker.update(finder.detect(frame.image, frame.area, frame.frame_size), frame.captured_at)
         snapshot = BandSnapshot(frame.image, frame.area, frame.frame_size, frame.captured_at, rows)
         marker = tuple((row.row_id, row.box, row.sure, row.missing) for row in rows)
         is_settling = any(row.stable_captures <= STABLE_CAPTURES for row in rows)

@@ -5,7 +5,9 @@ táblák. Ezek a fordításba keveredve értelmetlen szöveget adnak („N EEX36
 takarást is óriásira nyújtják. A GTA-felirat felismerhető:
 - fehér betűk (a darab pixeleinek jó része hófehér; a rendszám sötét betű világos alapon),
 - a sorai egy oszlopban, középre igazítva, szorosan egymás alatt állnak,
-- a kép közepén áll; a minitérkép fölötti értesítés („Moses Bucked You $825”) oldalt van,
+- a kép közepén áll; a minitérkép fölötti értesítés („Moses Bucked You $825”) oldalt van
+  (ha a sáv egészét nézzük, whole_band_text, a máshol álló szöveg is számít, de csak ha nincs
+  középen felirat, és nem a sáv széle vágja el),
 - a párbeszéd sorai fölött végződik a küldetésutasítás („Find Dunk”, „Follow Mia”): az a kép alján,
   külön sorban áll, és nem fordítjuk,
 - a kijelző feliratai (csupa nagybetű: „BASEBALL BAT”, vagy csak szám: „100”) nem párbeszéd,
@@ -112,12 +114,27 @@ class FrameCenter:
     x: float  # a teljes kép vízszintes közepe
     frame_width: float
     dialogue_bottom: float = float("inf")  # ennél lejjebb (nagyobb y) már a küldetésutasítás sora áll
+    # A figyelt sáv két széle a teljes képen; végtelen: nem tudjuk, semmi sem ér a széléhez
+    band_left: float = float("-inf")
+    band_right: float = float("inf")
+    edge_margin: float = 0.0  # képpont; a hívó adja meg (row_finder.band_edge_margin, a kereső szabálya)
+    anywhere: bool = False  # True: középen álló felirat híján a sáv máshol álló szövege is felirat lehet
 
     def is_near(self, box: Box) -> bool:
         return abs((box.left + box.right) / 2 - self.x) <= CENTER_TOLERANCE_RATIO * self.frame_width
 
     def is_dialogue_row(self, box: Box) -> bool:
         return (box.top + box.bottom) / 2 <= self.dialogue_bottom
+
+    def touches_band_edge(self, box: Box) -> bool:
+        """A sáv széle vágja-e el a szöveget (a széléhez edge_margin-nél közelebb ér)."""
+        return reaches_band_edge((box.left, box.right), (self.band_left, self.band_right), self.edge_margin)
+
+
+def reaches_band_edge(columns: tuple[float, float], band: tuple[float, float], margin: float) -> bool:
+    """A sáv széle vágja-e el a szöveget: a (bal, jobb) oszlopai a sáv (bal, jobb) széléhez margin-nál közelebb
+    érnek. A sorkereső (row_geometry) és a pipeline ugyanígy, ugyanarra a (kitömött) sordobozra méri."""
+    return columns[0] - band[0] < margin or band[1] - columns[1] < margin
 
 
 def is_hud_label(text: str) -> bool:
@@ -137,7 +154,8 @@ def is_hud_label(text: str) -> bool:
 def select_subtitle(fragments: list[Fragment], center: FrameCenter | None = None) -> list[Fragment]:
     """A felirat darabjai: fehérek, és a leghosszabb szövegdarabbal egy tömbben állnak.
 
-    center: ha meg van adva, csak a kép közepén álló szöveg számít párbeszédnek.
+    center: ha meg van adva, csak a kép közepén álló szöveg számít párbeszédnek; ha center.anywhere,
+    középen álló szöveg híján a sáv máshol álló, a sáv széléig nem érő szövege is.
     """
     white = [f for f in fragments if f.whiteness >= MIN_WHITE_FRACTION and not is_hud_label(f.text)
              and (center is None or center.is_dialogue_row(f.box))]
@@ -146,6 +164,11 @@ def select_subtitle(fragments: list[Fragment], center: FrameCenter | None = None
     segments = _segments(white)
     boxes = {id(s): _union([f.box for f in s]) for s in segments}
     central = [s for s in segments if center is None or center.is_near(boxes[id(s)])]
+    if not central and center is not None and center.anywhere:
+        # A középső felirat mindig elsőbbséget kap; csak nélküle keresünk máshol, és a sáv széle által
+        # elvágott szöveg (csonka szavak) akkor sem számít
+        segments = [s for s in segments if not center.touches_band_edge(boxes[id(s)])]
+        central = segments
     if not central:
         return []
     main = max(central, key=_letters)

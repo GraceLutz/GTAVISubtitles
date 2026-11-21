@@ -21,7 +21,7 @@ from .frosted_cover import Backdrop
 from .handoff import BandWatcher, Inbox, LatestBox, ReadRows, RowRecognizer, TkWaker, start_worker
 from .i18n import t
 from .ocr import Box
-from .row_finder import ROW_FINDER, is_wide_enough
+from .row_finder import is_wide_enough, make_row_finder
 from .row_pipeline import RowPipeline
 from .row_tracker import BandFrame, BandSnapshot
 
@@ -43,14 +43,15 @@ class WakingRowPipeline(RowPipeline):
 
 class RowPath:
     def __init__(self, pipeline: RowPipeline, read_rows: ReadRows, min_score: float,
-                 schedule: Callable[[], None]) -> None:
+                 schedule: Callable[[], None], *, whole_band: bool = False) -> None:
         """read_rows: SubtitleReader.read_rows; min_score: config.min_text_score.
-        schedule: handoff.tk_scheduler(...) – ezzel fut le a Tk-szálon a hívó kirajzolási lépése, amikor dolga van."""
+        schedule: handoff.tk_scheduler(...) – ezzel fut le a Tk-szálon a hívó kirajzolási lépése, amikor dolga van.
+        whole_band: config.whole_band_text – a sáv középen kívüli szövegét is sorként keressük és olvassuk."""
         self._pipeline = pipeline
         self._waker = TkWaker(schedule)
         self._inbox = Inbox(self._waker.wake)
         self._jobs: LatestBox[BandSnapshot] = LatestBox()
-        self._watcher = BandWatcher(ROW_FINDER, self._inbox, self._jobs)
+        self._watcher = BandWatcher(make_row_finder(whole_band), self._inbox, self._jobs)
         start_worker("row-recognizer", self._jobs, RowRecognizer(read_rows, self._inbox, min_score).submit)
         self._is_broken = False
         self._backdrop: tuple[BandSnapshot, Backdrop] | None = None
@@ -58,6 +59,10 @@ class RowPath:
     def wake(self) -> None:
         """Jelzés a Tk-szálnak; bármely szálból hívható, és nem blokkol (a pipeline a kész fordításnál hívja)."""
         self._waker.wake()
+
+    def set_whole_band(self, whole_band: bool) -> None:
+        """config.whole_band_text változott: a sorkereső a következő sávtól eszerint keres."""
+        self._watcher.set_finder(make_row_finder(whole_band))
 
     def can_read(self, frame_width: int) -> bool:
         """Használható-e most a soralapú út ekkora képen."""

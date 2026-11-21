@@ -3,7 +3,8 @@ import json
 import numpy as np
 import pytest
 
-from gta_felirat.config import AppConfig, ConfigError, Region, config_from_dict, load_config, with_overrides
+from gta_felirat.config import (AppConfig, ConfigError, Region, config_from_dict, load_config, save_settings,
+                                with_overrides)
 from gta_felirat.ocr import Box, has_bright_text, join_lines, region_to_box
 from gta_felirat.overlay import blend, render_subtitle, subtitle_position
 
@@ -47,6 +48,25 @@ def test_row_reading_is_on_unless_the_config_switches_it_off(tmp_path):
 
     assert load_config(None).row_reading is True
     assert load_config(path).row_reading is False
+
+
+def test_whole_band_text_is_on_unless_the_config_switches_it_off(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text('{"whole_band_text": false}', encoding="utf-8")
+
+    assert load_config(None).whole_band_text is True
+    assert load_config(path).whole_band_text is False
+
+
+def test_whole_band_text_survives_save_and_load(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text('{"device_index": 1}', encoding="utf-8")
+
+    save_settings(path, {"whole_band_text": False})
+
+    config = load_config(path)
+    assert config.whole_band_text is False
+    assert config.device_index == 1
 
 
 def test_overrides_ignore_none_values():

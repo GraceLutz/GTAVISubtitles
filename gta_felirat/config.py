@@ -78,6 +78,9 @@ class AppConfig:
     # Remote Play módban soronkénti olvasás: csak az új feliratsort olvassuk be (gyorsabb fordítás, kisebb
     # terhelés); a folyamatos rögzítésre épül. false: mindig a teljes sávot olvassuk
     row_reading: bool = True
+    # A feliratsáv egészében keresünk szöveget, nem csak a kép közepén: ha a játék máshova (oldalra, más sorba)
+    # teszi a szöveget, azt is kiolvassuk. false: csak a középre igazított felirat, mint korábban
+    whole_band_text: bool = True
     panel_opacity: int = 245
     # A fordítás legfeljebb ilyen széles (a kép szélességéhez mérve); a Minta módban a panel szélénél húzva állítható
     panel_width_ratio: float = 0.9

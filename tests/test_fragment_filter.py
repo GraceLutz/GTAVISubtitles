@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -5,6 +7,7 @@ from gta_felirat.config import Region
 from gta_felirat.fragment_filter import (Fragment, FrameCenter, is_hud_label, select_subtitle,
                                          white_fraction)
 from gta_felirat.ocr import Box, frame_center, region_to_box
+from gta_felirat.row_finder import band_edge_margin
 
 SUBTITLE_WHITENESS = 0.08
 FULL_HD_CENTER = FrameCenter(960, 1920)
@@ -182,3 +185,52 @@ def test_brightly_lit_licence_plate_does_not_join_the_dialogue():
 def test_plate_alone_is_not_a_subtitle():
     plate = fragment("BM4.72H", 905, 950, 1015, 990, whiteness=0.55)
     assert select_subtitle([plate], full_hd_frame()) == []
+
+
+# --- a sáv bárhol álló szövege (whole_band_text) ---------------------------------
+
+def free_frame():
+    """1920x1080-as kép az alapsávval (x 115–1804), és a sáv egészét nézzük (mint a soralapú út)."""
+    area = region_to_box(Region(), 1920, 1080)
+    return replace(full_hd_frame(), band_left=area.left, band_right=area.right, edge_margin=band_edge_margin(1920),
+                   anywhere=True)
+
+
+def test_off_centre_dialogue_is_kept_when_the_whole_band_is_watched():
+    line = fragment("Lucia: Where are you going?", 200, 957, 560, 994)
+    assert texts(select_subtitle([line], free_frame())) == [line.text]
+
+
+def test_off_centre_dialogue_is_still_dropped_without_the_switch():
+    line = fragment("Lucia: Where are you going?", 200, 957, 560, 994)
+    assert select_subtitle([line], full_hd_frame()) == []
+
+
+def test_centred_dialogue_wins_over_a_longer_side_text_when_the_whole_band_is_watched():
+    notification = fragment("Hungry Health recovers until fed.", 240, 842, 640, 874)
+    line = fragment("Bring it in.", 885, 957, 1035, 994)
+    assert texts(select_subtitle([notification, line], free_frame())) == ["Bring it in."]
+
+
+def test_text_cut_off_by_the_band_edge_is_dropped():
+    # Valós eset: a telefonos üzenetkártya sorait a sáv jobb széle (x 1804) szó közben vágja el
+    card = fragment("Oh and if you're heading into Gellho", 1507, 957, 1800, 994)
+    assert select_subtitle([card], free_frame()) == []
+
+
+def test_two_left_aligned_lines_off_centre_form_one_block():
+    first = fragment("Moses: The Crawler I want you to boost", 300, 915, 760, 948)
+    second = fragment("is in a yard.", 300, 957, 440, 994)
+    assert texts(select_subtitle([second, first], free_frame())) == [first.text, second.text]
+
+
+@pytest.mark.parametrize("box, expected", [
+    (Box(115, 957, 400, 994), True), (Box(126, 957, 400, 994), True), (Box(128, 957, 400, 994), False),
+    (Box(1500, 957, 1804, 994), True), (Box(1500, 957, 1790, 994), False),
+])
+def test_box_within_the_edge_margin_of_the_band_touches_its_edge(box, expected):
+    assert free_frame().touches_band_edge(box) is expected
+
+
+def test_frame_centre_without_band_edges_touches_nothing():
+    assert FULL_HD_CENTER.touches_band_edge(Box(0, 957, 1920, 994)) is False

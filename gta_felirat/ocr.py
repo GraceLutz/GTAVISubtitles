@@ -3,6 +3,9 @@
 Két lépésben olvasunk: előbb megkeressük, hol van feliratszínű szöveg a sáv közepén (keresés),
 aztán csak ezeket a sorokat olvassuk be (olvasás). Így a kijelző többi szövegére nem megy idő,
 és egy már ismert helyű sort keresés nélkül is újra lehet olvasni (read_rows).
+A kép közepétől távoli szöveget (whole_band_text) csak a soralapú út keresi (row_detector): az egész
+sáv a neurális keresőnek túl nagy (lekicsinyítve a középső feliratsorok elveszhetnének), ezért itt a
+keresés a kapcsolótól függetlenül a sáv középső részét nézi.
 """
 
 import re
@@ -328,9 +331,11 @@ class SubtitleReader:
         """A sáv oszlopai, amelyeket a kereső megnéz (a kép szélességének középső része)."""
         frame_width = area.width / (self._region.right - self._region.left)
         frame_left = area.left - self._region.left * frame_width
-        left = int(frame_left + DETECT_SPAN[0] * frame_width) - area.left
-        right = int(frame_left + DETECT_SPAN[1] * frame_width) - area.left
-        return max(left, 0), min(right, area.width)
+        left = max(int(frame_left + DETECT_SPAN[0] * frame_width) - area.left, 0)
+        right = min(int(frame_left + DETECT_SPAN[1] * frame_width) - area.left, area.width)
+        if left >= right:
+            return 0, area.width  # a sáv kívül esik a kép középső részén: üres kivágás helyett az egész sávot
+        return left, right
 
     @staticmethod
     def _is_cut_off(box: Box, area: Box, left: int, right: int) -> bool:

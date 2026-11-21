@@ -81,7 +81,7 @@ class RemotePlayApp(SubtitleAppBase):
         self._overlay = OverlayWindow(self._settings.root, self._subtitles, self._region_editor,
                                       config.visible_in_recordings)
         self._row_path = RowPath(self._pipeline, reader.read_rows, config.min_text_score,
-                                 tk_scheduler(self._settings.root, self._on_wake))
+                                 tk_scheduler(self._settings.root, self._on_wake), whole_band=config.whole_band_text)
 
     def _create_pipeline(self, config: AppConfig, reader: SubtitleReader) -> WakingRowPipeline:
         """Soralapú pipeline; amíg nem kap pillanatképet, pontosan úgy működik, mint a régi."""
@@ -120,6 +120,7 @@ class RemotePlayApp(SubtitleAppBase):
         self._overlay.needs_redraw = True
 
     def _on_config_changed(self) -> None:
+        self._row_path.set_whole_band(self._config.whole_band_text)
         self._overlay.set_capture_visible(self._config.visible_in_recordings)
         self._overlay.needs_redraw = True
 

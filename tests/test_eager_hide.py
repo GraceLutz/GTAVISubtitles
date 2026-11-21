@@ -253,3 +253,15 @@ def test_failing_row_detector_switches_the_instant_cover_off(monkeypatch):
     monkeypatch.undo()
     cover.publish(band_with(("We ain't lookin' for trouble, okay?", DIALOGUE_BASELINE)), BAND_AREA, Region(), 10.2)
     assert cover.view(None, now=10.21)[1] == ()  # kikapcsolva marad
+
+
+def test_row_far_from_the_frame_centre_is_never_hidden_before_it_is_read():
+    # A sáv bárhol álló szövegét (whole_band_text) is csak olvasás után takarjuk: az azonnali takarás
+    # továbbra is csak a kép közepén keres
+    centred = band_with(("We ain't lookin' for trouble, okay?", DIALOGUE_BASELINE))
+    off_centre = np.roll(centred, -500, axis=1)  # ugyanaz a sor 500 képponttal balra
+    cover = EagerCover()
+
+    cover.publish(off_centre, BAND_AREA, Region(), 10.0)
+
+    assert cover.view(None, now=10.01)[1] == ()
