@@ -22,6 +22,7 @@ MESSAGES: dict[str, str] = {
     "settings.preview_hint_key": "Press r to show sample text.",
     "settings.preview": "Show sample text and the watched area (for setup)",
     "settings.only_spoken": "Spoken lines only (“Name: text” lines)",
+    "settings.translate_objectives": "Translate mission objectives too (own line)",
     "settings.thin_font": "Thin font (like in GTA)",
     "settings.visible_in_recordings": "Show in recordings and streams (Medal, OBS, Twitch, Kick, YouTube)",
     "settings.key_not_needed": "No key needed",

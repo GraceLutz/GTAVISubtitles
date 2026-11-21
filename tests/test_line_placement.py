@@ -1,6 +1,7 @@
 import time
 
 import numpy as np
+import pytest
 
 from gta_felirat.config import AppConfig
 from gta_felirat.frosted_cover import Backdrop
@@ -35,6 +36,20 @@ def test_unfinished_sentence_continues_on_the_next_row():
     assert [line.text for line in lines] == ["Got so bad once, I had bounties on me in three different states."]
     assert lines[0].box == Box(700, 915, 1220, 994)
     assert lines[0].rows == (UPPER, LOWER)  # a két képernyősor külön is megvan (soronkénti újraolvasáshoz)
+
+
+@pytest.mark.parametrize("caption", ["[♪ Money For Nothing – Dire Straits ♪]", "[J Money For Nothing - Dire Straits J]",
+                                     "[music playing]"])
+def test_bracketed_caption_row_is_left_out_and_does_not_swallow_the_spoken_row_below(caption):
+    lines = spoken_lines([(caption, UPPER), ("Lucia: Baby, this has been a long time comin'.", LOWER)])
+
+    assert lines == (OcrLine("Lucia: Baby, this has been a long time comin'.", LOWER, (LOWER,)),)
+
+
+def test_row_starting_with_a_speaker_starts_a_new_spoken_line_after_an_unfinished_row():
+    lines = spoken_lines([("Lucia: Well, Vicki is really curious, but", UPPER), ("Jason: Who's that up there?", LOWER)])
+
+    assert [line.text for line in lines] == ["Lucia: Well, Vicki is really curious, but", "Jason: Who's that up there?"]
 
 
 def test_normalize_keeps_line_breaks_between_spoken_lines():

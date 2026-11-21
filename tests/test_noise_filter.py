@@ -57,6 +57,18 @@ def test_leading_fragment_from_other_text_is_dropped(raw, cleaned):
     assert clean_ocr_text(raw) == cleaned
 
 
+@pytest.mark.parametrize("raw, cleaned", [
+    # Világos háttér előtt a név utáni kettőspontot pontosvesszőnek olvassa az OCR
+    ("Cal; Alright, just don't die on me for real, man. Promise.",
+     "Cal: Alright, just don't die on me for real, man. Promise."),
+    ("Staff Member; 'Sup?", "Staff Member: 'Sup?"),
+    ("Okay, fine; let's go.", "Okay, fine; let's go."),
+    ("We go now; you stay here.", "We go now; you stay here."),
+])
+def test_semicolon_read_after_a_speaker_name_is_a_colon(raw, cleaned):
+    assert clean_ocr_text(raw) == cleaned
+
+
 @pytest.mark.parametrize("text", [
     "Játék indítása",
     "Játék indítása 12 órája",

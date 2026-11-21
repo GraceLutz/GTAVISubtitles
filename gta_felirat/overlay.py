@@ -27,9 +27,9 @@ SHADOW_COLOR = (0, 0, 0, 170)
 PANEL_COLOR = (10, 10, 10)
 MAX_SPEAKER_WORDS = 3
 # Sor eleji beszélőnév: „Locals:” → a név színes, a kettősponttól fehér
-_SPEAKER_NAME = re.compile(r"^([^\W\d_](?:[^\W\d_]|[ .'-]){0,30}):\s")
+_SPEAKER_NAME = re.compile(r"^([^\W\d_](?:[^\W\d_]|[ .'&-]){0,30}):\s")
 # Egy sorban több megszólalás: mondatvég után új „Név:” kezdődik (mint a translator beszélőhatára)
-_SPEAKER_BOUNDARY = re.compile(r"(?<=[.!?…])\s+(?=[A-Z](?:[^\W\d_]|[ .'-]){0,30}:\s)")
+_SPEAKER_BOUNDARY = re.compile(r"(?<=[.!?…])\s+(?=[A-Z](?:[^\W\d_]|[ .'&-]){0,30}:\s)")
 
 type Rgb = tuple[int, int, int]
 # (név, RGB) párok a játékból mintázva; a név úgy, ahogy a kettőspont előtt áll

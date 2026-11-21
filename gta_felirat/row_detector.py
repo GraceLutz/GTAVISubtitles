@@ -179,6 +179,12 @@ def detect(band_bgr: np.ndarray, band_left: int, frame_width: float, params: Par
 
 
 def _centred(band: np.ndarray, measures: Measures) -> Detection:
+    """A kép közepére igazított sorok, és a biztos sorok mellett álló szürke közbeszólás-sorok."""
+    found = _centred_rows(band, measures)
+    return _with_grey_neighbours(band, found, measures) if any(row.sure for row in found.rows) else found
+
+
+def _centred_rows(band: np.ndarray, measures: Measures) -> Detection:
     """A kép közepére igazított sorok: előbb fehér, biztos fehér sor nélkül halvány (tévéfelirat) betűvel."""
     params = measures.params
     white = _scan(band, _white(params), measures)
@@ -193,6 +199,45 @@ def _centred(band: np.ndarray, measures: Measures) -> Detection:
         return dim
     kept = keep_white_rows(white.rows, dim.rows)
     return white if kept == white.rows else replace(white, rows=kept)
+
+
+def _with_grey_neighbours(band: np.ndarray, white: Detection, measures: Measures) -> Detection:
+    """A biztos fehér feliratsor mellé a közvetlenül fölötte vagy alatta álló szürke sor is (a játék a
+    névtelen közbeszólást, pl. „Lu! I thought…”, szürkén írja a megszólalás alá); a fehér sorok érintetlenek."""
+    params = measures.params
+    level = _text_level(band, params)
+    if level >= params.white_level:
+        return white  # világos jelenet: szürke betű nem válik el a háttértől
+    # A közbeszólás szürkébb a tévéfeliratnál; csak a biztos sor mellett keressük, így a mélyebb szint is elég szigorú
+    tone = _Tone(min(level, GREY_NEIGHBOUR_LEVEL), params.dim_outline_level, dim=True)
+    dim = _scan(band, tone, measures)
+    extra = grey_neighbours(white.rows, dim.rows)
+    if not extra or white.core is None or dim.core is None:
+        return white
+    merged = white.core.copy()
+    for row in extra:  # a sorjelhez (row_signature) a szürke sor betűi is a közös maszkba kerülnek
+        lines, columns = slice(row.ink_top, row.ink_bottom), slice(row.ink_left, row.ink_right)
+        merged[lines, columns] = dim.core[lines, columns]
+    merged.setflags(write=False)
+    return Detection(tuple(sorted(white.rows + extra, key=lambda r: (r.top, r.left))), merged, white.level)
+
+
+def grey_neighbours(white: tuple[Row, ...], dim: tuple[Row, ...]) -> tuple[Row, ...]:
+    """A halvány menet sorai, amelyek egy biztos fehér sor közvetlen szomszédjai (a játék sorközénél nem nagyobb
+    réssel), de egyik fehér sor képsoraira sem esnek (azok a fehér sorok halvány újratalálásai)."""
+    sure = [row for row in white if row.sure]
+
+    def is_neighbour(row: Row) -> bool:
+        return any(_vertical_gap(row, other) <= NEIGHBOUR_GAP_ROWS * (other.ink_bottom - other.ink_top)
+                   for other in sure)
+
+    return tuple(row for row in dim
+                 if is_neighbour(row) and not any(_vertical_gap(row, other) < 0 for other in white))
+
+
+def _vertical_gap(first: Row, second: Row) -> int:
+    """A két sor betűi közötti függőleges rés; negatív, ha képsoraik fedik egymást."""
+    return max(first.ink_top - second.ink_bottom, second.ink_top - first.ink_bottom)
 
 
 def dim_replaces_white(white: tuple[Row, ...], dim: tuple[Row, ...]) -> bool:
@@ -218,6 +263,11 @@ def keep_white_rows(white: tuple[Row, ...], dim: tuple[Row, ...]) -> tuple[Row, 
                  for row in white)
 
 
+# A szürke szomszédsor legfeljebb ennyi sormagasságnyira áll a fehér sortól: a játék sorköze ~1 sormagasság,
+# a küldetésutasítás ~2-re van a párbeszéd alatt
+NEIGHBOUR_GAP_ROWS = 1.5
+# A szürke közbeszólás betűmagja ~110-150 (720p-s felvételen mérve); a tévéfelirat halvány szintje (dim_level) ennél magasabb
+GREY_NEIGHBOUR_LEVEL = 95
 SAME_LINE_TOLERANCE_PX = 4  # a két menet ugyanannak a sornak a tetejét és alját ennyin belül méri
 
 

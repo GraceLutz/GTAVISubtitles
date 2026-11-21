@@ -21,6 +21,7 @@ class FakeBackend:
 @pytest.mark.parametrize("text, expected", [
     ("Jason: We go now.", ("Jason", "We go now.")),
     ("Lucia: Wait!", ("Lucia", "Wait!")),
+    ("Kolt & Associates: Yo, he's here.", ("Kolt & Associates", "Yo, he's here.")),
     ("We go now.", ("", "We go now.")),
     ("Listen to me very carefully: go", ("", "Listen to me very carefully: go")),
     ("time 10:30 now", ("", "time 10:30 now")),

@@ -3,7 +3,7 @@
 A régi út (SubtitlePipeline.submit_band / poll) minden olvasásnál az egész sávban keres és olvas
 (~300 ms). Itt a sávot egy gyors sorkereső figyeli (row_tracker), és:
 - az újonnan megjelent, feliratszerű sort azonnal eltakarjuk, még mielőtt elolvastuk volna
-  (legfeljebb EAGER_HIDE_SECONDS-ig);
+  (az olvasásig, legfeljebb UNREAD_HIDE_SECONDS-ig);
 - csak az új képpontú sort olvassuk be; második olvasás helyett az a megerősítés, hogy a sor
   képpontjai STABLE_CAPTURES rögzítésen át nem változtak;
 - a lefordított sor fordítása olvasás nélkül követi a sort, amikor a játék feljebb görgeti.
@@ -40,15 +40,20 @@ from dataclasses import dataclass, replace
 
 from .config import AppConfig
 from .fragment_filter import DIALOGUE_BOTTOM_RATIO, MIN_WHITE_FRACTION, Fragment, FrameCenter, select_subtitle
-from .line_placement import build_shown, match_lines
-from .ocr import Box, OcrLine, SubtitleReader, is_spoken_line, looks_like_subtitle, spoken_lines, union_box
+from .line_placement import PENDING_HIDE_SECONDS, build_shown, match_lines
+from .objective_line import ObjectiveLine
+from .ocr import (Box, OcrLine, SubtitleReader, clean_ocr_text, is_spoken_line, looks_like_subtitle, spoken_lines,
+                  union_box)
 from .row_finder import band_edge_margin
 from .row_tracker import STABLE_CAPTURES, BandSnapshot, RowObs, RowText, is_same_place, overlaps
 from .subtitle_pipeline import SubtitlePipeline
 from .subtitle_tracker import NewSubtitle, SubtitleCleared
 from .translation_service import TranslationService
 
-EAGER_HIDE_SECONDS = 0.35  # olvasás előtt legfeljebb eddig takarunk el egy új, feliratszerű sort
+EAGER_HIDE_SECONDS = 0.35  # az előző sortól örökölt (még nem olvasott) szöveg eddig érvényes
+# Az olvasatlan, biztos párbeszédsort az olvasásig takarjuk, de legfeljebb ameddig a le nem fordított sort
+# is (a felismerés terhelt gépen 0,5-1 mp is lehet; ennyi ideig nem villanhat ki az angol szöveg)
+UNREAD_HIDE_SECONDS = PENDING_HIDE_SECONDS
 # Időfüggő állapotnál (késő fordítás takarása, eltűnés utáni várakozás) ilyen sűrűn nézünk rá, ha a kép nem változik
 RECHECK_SECONDS = 0.1
 # Ha ennyi ideje nem jött újabb kép, a mostani áll (a rögzítés csak változáskor ad képet): az egyetlen képen
@@ -113,6 +118,9 @@ class RowPipeline(SubtitlePipeline):
         self._last_state: _State | None = None
         self._is_on_screen = False  # a legutóbbi kép szerint látszik a felirat
         self._next_deadline = NEVER
+        # A küldetésutasítás sora: a párbeszédtől függetlenül, a saját sorára fordítjuk (translate_objectives)
+        self._objective = ObjectiveLine(self._translation.translate, self._translate_pool,
+                                        config.similarity_threshold, wake=wake)
         self.stats = RowPathStats()
 
     @property
@@ -140,6 +148,7 @@ class RowPipeline(SubtitlePipeline):
         nem olvassa újra azt a sort, amelyik a visszatéréskor még a képen van."""
         self._snapshot, self._rows = None, ()
         self._last_state, self._is_on_screen, self._next_deadline = None, False, NEVER
+        self._objective.see(None, 0.0)  # a régi út nem keres küldetéssort
         if self._block is None:  # a takarásokat csak a soralapú út venné le: ami kell, azt a régi út újra kiteszi
             self.shown = build_shown(match_lines(self._translated, self._live_lines)[0], [], self.shown,
                                      speaker_colors=self._live_speaker_colors())
@@ -158,6 +167,8 @@ class RowPipeline(SubtitlePipeline):
         if current is not None and (has_news or self._last_state is None or now >= self._next_deadline):
             self._refresh(current.captured_at, now)
         self._collect_translation(now)
+        if self._objective.collect() and self._snapshot is not None:
+            self._follow_live_lines(now)
         return self.shown is not before
 
     def pump(self, now: float) -> bool:
@@ -222,11 +233,14 @@ class RowPipeline(SubtitlePipeline):
         unread = tuple((row.row_id, row.box, self._can_hide_early(row))
                        for row in self._rows if row.row_id not in self._texts)
         state = (lines, confirmed, unread)
+        has_new_objective = self._objective.see(self._objective_line(), now)
         if state != self._last_state:
             self._last_state = state
             self._apply_rows(lines, confirmed, now)
         else:
             self._let_time_pass(bool(lines), now)
+        if has_new_objective:
+            self._follow_live_lines(now)
         self._is_on_screen = bool(lines)  # csak a most is látszó sorokból áll (lásd _assemble)
         deadline = self._deadline(state, pictured_at, now, is_free_waiting)
         # A semmit sem változtató képkocka (pl. 30 kép/mp-es videóablak álló jeleneten) nem tolhatja
@@ -271,6 +285,21 @@ class RowPipeline(SubtitlePipeline):
                 lines += free_lines
                 used += block
         return lines, tuple(legible[fragment.box] for fragment in used), is_free_waiting
+
+    def _objective_line(self) -> OcrLine | None:
+        """A párbeszédsorok alatt, középen álló, feliratszínű, mondatszerű sor (küldetésutasítás), ha fordítjuk."""
+        if not self._config.translate_objectives or self._snapshot is None:
+            return None
+        center = self._frame_center()
+        min_score = self._config.min_text_score
+        rows = sorted((row for row in self._rows
+                       if row.missing == 0 and not center.is_dialogue_row(row.box) and center.is_near(row.box)
+                       and row.whiteness >= MIN_WHITE_FRACTION and row.row_id in self._texts
+                       and self._texts[row.row_id].is_legible(min_score)), key=lambda row: row.box.top)
+        text = " ".join(clean_ocr_text(self._texts[row.row_id].text.strip()) for row in rows).strip()
+        if not rows or not looks_like_subtitle(text):
+            return None
+        return OcrLine(text, union_box([row.box for row in rows]))
 
     def _subtitle_lines(self, fragments: list[Fragment], *, must_be_spoken: bool = False) -> tuple[OcrLine, ...]:
         """A darabok megszólalásokká fűzve, ha a szövegük feliratnak tűnik; különben üres.
@@ -328,13 +357,18 @@ class RowPipeline(SubtitlePipeline):
 
         is_free_waiting: máshol álló szöveg vár arra, hogy a képpontjai stabilak legyenek (lásd _assemble)."""
         lines, confirmed, _unread = state
-        waiting = [row for row in self._rows if row.row_id not in self._texts or self._texts[row.row_id].provisional]
-        moments = [row.first_seen + EAGER_HIDE_SECONDS for row in waiting
-                   if now - row.first_seen < EAGER_HIDE_SECONDS]  # lejár az olvasás előtti takarás
+        moments = [row.first_seen + EAGER_HIDE_SECONDS for row in self._rows  # lejár az örökölt szöveg
+                   if row.row_id in self._texts and self._texts[row.row_id].provisional
+                   and now - row.first_seen < EAGER_HIDE_SECONDS]
+        moments += [row.first_seen + UNREAD_HIDE_SECONDS for row in self._rows  # lejár az olvasás előtti takarás
+                    if row.row_id not in self._texts and now - row.first_seen < UNREAD_HIDE_SECONDS]
         if (lines and not confirmed) or is_free_waiting:
             moments.append(pictured_at + STILL_SECONDS)  # ha addig nem jön újabb kép, a mostani áll
         if (self.shown is not None and self.shown.hidden) or (not lines and self._tracker.current):
             moments.append(now + RECHECK_SECONDS)  # késő fordítás takarása, eltűnés utáni várakozás
+        objective_deadline = self._objective.deadline(now)
+        if objective_deadline is not None:
+            moments.append(objective_deadline)  # lejár a fordításra váró küldetéssor takarása
         return min(moments, default=NEVER)
 
     # --- kiírás ---------------------------------------------------------------------------
@@ -345,13 +379,16 @@ class RowPipeline(SubtitlePipeline):
         if self._block is not None:
             return  # egy tömbben álló üzenet látszik (hibaüzenet, eltérő sorszám)
         pairs, untranslated = match_lines(self._translated, self._live_lines)
-        hidden = self._pending.boxes_to_hide(untranslated, now) + self._eager_boxes(now)
+        hidden = self._pending.boxes_to_hide(untranslated, now) + self._eager_boxes(now) + self._objective.hidden(now)
+        objective = self._objective.pair()
+        if objective is not None:
+            pairs.append(objective)
         self.shown = build_shown(pairs, hidden, self.shown, speaker_colors=self._live_speaker_colors())
 
     def _eager_boxes(self, now: float) -> list[Box]:
         """Az új, még olvasatlan feliratszerű sorok: rövid ideig már olvasás előtt eltakarjuk őket."""
         return [row.box for row in self._rows if row.row_id not in self._texts and self._can_hide_early(row)
-                and now - row.first_seen < EAGER_HIDE_SECONDS]
+                and now - row.first_seen < UNREAD_HIDE_SECONDS]
 
     def _can_hide_early(self, row: RowObs) -> bool:
         """Olvasás előtt csak azt takarjuk, ami szinte biztosan párbeszédsor: a kereső biztos benne,

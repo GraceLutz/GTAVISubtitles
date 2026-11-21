@@ -72,6 +72,7 @@ class AppConfig:
     # A réteg látszik a monitorrögzítésben (Medal, OBS → Kick, Twitch, YouTube)
     visible_in_recordings: bool = True
     only_spoken_lines: bool = True  # csak a „Név: szöveg” párbeszédsorokat fordítja
+    translate_objectives: bool = True  # a küldetésutasítás sorát is lefordítja, a saját sorára
     # Remote Play módban a feliratsáv folyamatos rögzítése külön szálon (gyorsabb takarás és olvasás);
     # false: a régi, olvasásonkénti rögzítés, ha a folyamatos valamiért gondot okozna
     fast_capture: bool = True

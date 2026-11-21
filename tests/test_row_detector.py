@@ -215,6 +215,23 @@ def test_sure_white_row_ends_the_search_before_dim_text_is_looked_for():
     assert [(row.dim, row.top > DIALOGUE_BOTTOM) for row in rows] == [(False, True)]
 
 
+def test_grey_row_right_under_a_sure_white_row_is_found_too():
+    band = write(flat(DARK), "Lucia: Grab this, we have to go right now!", ROW_BASELINES[1])
+    band = write(band, "Lu! I thought...", ROW_BASELINES[2], level=DIM_TEXT)
+
+    rows = rows_in(band)
+
+    assert [row.dim for row in rows] == [False, True]
+    assert rows[1].top < ROW_BASELINES[2] < rows[1].bottom
+
+
+def test_grey_text_a_whole_row_away_from_the_white_row_is_not_taken():
+    band = write(flat(DARK), "Lucia: Grab this, we have to go right now!", ROW_BASELINES[0])
+    band = write(band, "Lu! I thought...", ROW_BASELINES[2], level=DIM_TEXT)
+
+    assert [row.dim for row in rows_in(band)] == [False]
+
+
 def test_objective_row_below_the_limit_does_not_hide_a_dim_dialogue_row():
     rows = rows_in(tv_scene_with_objective(), dialogue_bottom=DIALOGUE_BOTTOM)
 

@@ -18,16 +18,17 @@ OBJECTIVE_BASELINE = _GAME_ROWS_TOP + 200 - AREA.top  # a küldetésutasítás s
 FONT, FONT_SCALE, OUTLINE_PX = cv2.FONT_HERSHEY_SIMPLEX, 0.76, 2  # ekkora cv2-betű hasonlít a játék feliratára
 
 
-def band_with(*lines, seed=1):
-    """Sötét, enyhén zajos jelenet a megadott (szöveg, alapvonal) sorokkal."""
+def band_with(*lines, seed=1, background=40):
+    """Enyhén zajos (alapból sötét) jelenet a megadott (szöveg, alapvonal[, betűszín]) sorokkal; a betű alapból fehér."""
     noise = np.random.default_rng(seed).integers(-12, 13, (AREA.height, AREA.width, 3))
-    band = np.clip(40 + noise, 0, 255).astype(np.uint8)
-    for text, baseline in lines:
+    band = np.clip(background + noise, 0, 255).astype(np.uint8)
+    for text, baseline, *tone in lines:
+        level = tone[0] if tone else 255
         (width, _), _ = cv2.getTextSize(text, FONT, FONT_SCALE, 1)
         letters = np.zeros(band.shape[:2], np.uint8)
         cv2.putText(letters, text, (round(CENTER_X - width / 2), baseline), FONT, FONT_SCALE, 255, 1, cv2.LINE_AA)
         side = 2 * OUTLINE_PX + 1
         band[cv2.dilate(letters, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (side, side))) > 0] = 0
         alpha = letters[:, :, None] / 255.0
-        band[:] = (band * (1.0 - alpha) + 255 * alpha + 0.5).astype(np.uint8)
+        band[:] = (band * (1.0 - alpha) + level * alpha + 0.5).astype(np.uint8)
     return band

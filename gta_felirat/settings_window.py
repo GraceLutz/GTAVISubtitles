@@ -118,6 +118,7 @@ class SettingsWindow:
         self._opacity = tk.DoubleVar()
         self._hide_original = tk.BooleanVar()
         self._only_spoken = tk.BooleanVar()
+        self._translate_objectives = tk.BooleanVar()
         self._thin_font = tk.BooleanVar()
         self._visible_in_recordings = tk.BooleanVar()
         ttk.Separator(frame).grid(row=6, column=0, columnspan=3, sticky="ew", pady=10)
@@ -139,14 +140,17 @@ class SettingsWindow:
         ttk.Checkbutton(frame, text=t("settings.only_spoken"), variable=self._only_spoken,
                         command=lambda: self._change({"only_spoken_lines": self._only_spoken.get()})
                         ).grid(row=13, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        ttk.Checkbutton(frame, text=t("settings.translate_objectives"), variable=self._translate_objectives,
+                        command=lambda: self._change({"translate_objectives": self._translate_objectives.get()})
+                        ).grid(row=14, column=0, columnspan=3, sticky="w")
         ttk.Checkbutton(frame, text=t("settings.thin_font"), variable=self._thin_font,
                         command=lambda: self._change(
                             {"font_path": THIN_FONT_PATH if self._thin_font.get() else BOLD_FONT_PATH})
-                        ).grid(row=14, column=0, columnspan=3, sticky="w")
+                        ).grid(row=15, column=0, columnspan=3, sticky="w")
         ttk.Checkbutton(frame, text=t("settings.visible_in_recordings"),
                         variable=self._visible_in_recordings,
                         command=lambda: self._change({"visible_in_recordings": self._visible_in_recordings.get()})
-                        ).grid(row=15, column=0, columnspan=3, sticky="w")
+                        ).grid(row=16, column=0, columnspan=3, sticky="w")
         ttk.Button(frame, text=t("settings.reset_position"),
                    command=lambda: self._change({"subtitle_x": None, "subtitle_y": None})
                    ).grid(row=10, column=1, columnspan=2, sticky="w", pady=(4, 0))
@@ -210,6 +214,7 @@ class SettingsWindow:
             self._opacity.set(round(config.panel_opacity / 255 * PERCENT))
             self._hide_original.set(config.hide_original)
             self._only_spoken.set(config.only_spoken_lines)
+            self._translate_objectives.set(config.translate_objectives)
             self._thin_font.set(config.font_path == THIN_FONT_PATH)
             self._visible_in_recordings.set(config.visible_in_recordings)
             field_name = AI_MODEL_FIELDS.get(config.translator)

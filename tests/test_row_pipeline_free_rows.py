@@ -111,8 +111,8 @@ def test_off_centre_text_is_left_alone_when_the_whole_band_switch_is_off(make_sc
     assert scene.backend.calls == []
 
 
-def test_objective_under_a_centred_subtitle_still_stays_out(make_scene):
-    scene = make_scene()
+def test_objective_under_a_centred_subtitle_stays_out_of_the_free_text(make_scene):
+    scene = make_scene(translate_objectives=False)  # a küldetéssor saját útját a test_row_pipeline nézi
 
     scene.show(1.0, row(1, LOWER, first_seen=1.0), row(2, OBJECTIVE, first_seen=1.0))
     scene.read(1.04, (1, TROUBLE), (2, "Find Dunk"))

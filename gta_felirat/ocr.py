@@ -46,7 +46,12 @@ STAT_CHANGE_TOKEN = re.compile(r"^[+\-−]\$?\d+(?:[.,]\d+)?%?$")
 MIN_SHOUTED_WORD_LETTERS = 2  # az „I” és az „A” nem számít
 MAX_SHOUTED_WORD_RATIO = 0.5
 # Beszélő neve: csak betűk (számjegy nem, így a hívás-időzítő „Jason 00:04” nem beszélő)
-SPEAKER_PATTERN = re.compile(r"^[A-Z](?:[^\W\d_]|[ .'-]){0,30}:\s*\S")
+SPEAKER_PATTERN = re.compile(r"^[A-Z](?:[^\W\d_]|[ .'&-]){0,30}:\s*\S")
+# Világos háttér előtt a név utáni kettőspontot az OCR pontosvesszőnek olvassa („Cal; Alright…”); legfeljebb
+# kétszavas név után ez beszélő, nem mondatközi pontosvessző
+MISREAD_SPEAKER_COLON = re.compile(r"^([A-Z][^\W\d_]*(?:[ .'-][A-Za-z][^\W\d_]*)?);(?=\s*\S)")
+# Egész sort kitevő zárójeles hang- vagy zenefelirat; a hangjegyet az OCR néha „J”-nek olvassa, de a zárójel marad
+CAPTION_ROW = re.compile(r"^[\[(][^\])]*[\])]$|[♪♫]")
 # A sor elején magában álló kettőspont vagy pontosvessző (a beszélő neve nélkül maradt)
 LEADING_ORPHAN_PUNCTUATION = re.compile(r"^\s*[:;]+\s*")
 # A telefonhívás kijelzője a sor végén: „… alright? Jason 00:05 D”
@@ -171,8 +176,13 @@ def drop_trailing_icons(text: str) -> str:
     return " ".join(tokens)
 
 
+def fix_speaker_colon(text: str) -> str:
+    """A beszélő neve utáni, pontosvesszőnek olvasott kettőspont visszaállítása."""
+    return MISREAD_SPEAKER_COLON.sub(r"\1:", text)
+
+
 def clean_ocr_text(text: str) -> str:
-    return drop_trailing_icons(drop_call_timer(drop_leading_fragment(strip_stray_glyphs(text))))
+    return drop_trailing_icons(drop_call_timer(drop_leading_fragment(fix_speaker_colon(strip_stray_glyphs(text)))))
 
 
 def is_spoken_line(text: str) -> bool:
@@ -239,11 +249,20 @@ def join_lines(fragments: list[tuple[str, Box]]) -> str:
     return " ".join(row.text for row in _rows(fragments)).strip()
 
 
+def is_caption_row(text: str) -> bool:
+    """Zárójeles hang- vagy zenefelirat („[♪ Money For Nothing ♪]”, „[music playing]”): nem kimondott szöveg."""
+    return bool(CAPTION_ROW.search(text.strip()))
+
+
 def spoken_lines(fragments: list[tuple[str, Box]]) -> tuple[OcrLine, ...]:
-    """Megszólalásonként egy sor: a lezáratlan mondat a következő képernyősorban folytatódik."""
+    """Megszólalásonként egy sor: a lezáratlan mondat a következő képernyősorban folytatódik,
+    kivéve ha az a sor új beszélővel kezdődik. A zárójeles hang- és zenefeliratot kihagyjuk."""
     lines: list[OcrLine] = []
     for row in _rows(fragments):
-        if lines and not lines[-1].text.endswith(SENTENCE_END):
+        if is_caption_row(row.text):
+            continue
+        starts_new_speaker = bool(SPEAKER_PATTERN.match(clean_ocr_text(row.text)))
+        if lines and not starts_new_speaker and not lines[-1].text.endswith(SENTENCE_END):
             previous = lines.pop()
             row = OcrLine(f"{previous.text} {row.text}", union_box([previous.box, row.box]),
                           previous.rows + row.rows)

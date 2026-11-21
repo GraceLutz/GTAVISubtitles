@@ -91,6 +91,7 @@ def test_windows_credential_vault_round_trip():
     "Lucia: Jeez, what are you on, bro?",
     "Vagrant: Take a breath now. You ain't made for this. Lucia: Stop talking.",
     "Locals: Enough! I'm not your doormat!",
+    "Kolt & Associates: He's right fuckin' here, in the store.",  # cégnév a beszélő helyén
 ])
 def test_dialogue_lines_count_as_spoken(text):
     assert is_spoken_line(text)

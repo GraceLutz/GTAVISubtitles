@@ -12,7 +12,8 @@ from gta_felirat.i18n import t
 from gta_felirat.layer_plan import ShownLine
 from gta_felirat.line_placement import PENDING_HIDE_SECONDS
 from gta_felirat.ocr import EMPTY_RESULT, Box, OcrLine, OcrResult, region_to_box
-from gta_felirat.row_pipeline import EAGER_HIDE_SECONDS, RECHECK_SECONDS, STILL_SECONDS, RowPipeline
+from gta_felirat.row_pipeline import (EAGER_HIDE_SECONDS, RECHECK_SECONDS, STILL_SECONDS, UNREAD_HIDE_SECONDS,
+                                      RowPipeline)
 from gta_felirat.row_tracker import BandSnapshot, RowObs, RowText
 from gta_felirat.translation_service import TranslationService
 from gta_felirat.translator import CachedTranslator, TranslatorChoice
@@ -173,7 +174,20 @@ def test_hiding_before_the_read_is_bounded_in_time(make_scene):
     shown_again_at = scene.tick_until_change(1.01, 3.0)
 
     assert scene.shown is None  # a felismerő nem válaszolt: az angol sor újra látszik
-    assert EAGER_HIDE_SECONDS <= shown_again_at - 1.0 <= EAGER_HIDE_SECONDS + TICK
+    assert UNREAD_HIDE_SECONDS <= shown_again_at - 1.0 <= UNREAD_HIDE_SECONDS + TICK
+
+
+def test_row_stays_hidden_until_a_slow_read_arrives_and_its_translation_comes(make_scene):
+    scene = make_scene()
+    scene.show(1.0, row(1, LOWER, first_seen=1.0, stable=1))
+
+    assert scene.tick_until_change(1.01, 1.8) is None  # a felismerő lassú: az angol sor addig sem villan ki
+    scene.read(1.8, (1, TROUBLE))
+    while_translating = scene.shown
+    scene.translated(2.0)
+
+    assert while_translating.hidden == (LOWER,)
+    assert scene.shown.lines == (ShownLine(hu(TROUBLE), LOWER),)
 
 
 @pytest.mark.parametrize("doubt", [
@@ -189,8 +203,8 @@ def test_row_that_may_not_be_a_dialogue_line_is_not_hidden_before_it_is_read(mak
     assert scene.shown is None
 
 
-def test_mission_objective_below_the_dialogue_rows_is_never_hidden_or_translated(make_scene):
-    scene = make_scene()
+def test_mission_objective_is_left_alone_when_objectives_are_not_translated(make_scene):
+    scene = make_scene(translate_objectives=False)
 
     scene.show(1.0, row(1, OBJECTIVE, first_seen=1.0, stable=1))
     before_read = scene.shown
@@ -199,6 +213,86 @@ def test_mission_objective_below_the_dialogue_rows_is_never_hidden_or_translated
 
     assert before_read is None and scene.shown is None
     assert scene.backend.calls == []
+
+
+def finish_objective(scene, now):
+    """Elengedi a hamis fordítót, megvárja a küldetéssor fordítását, és begyűjti a szimulált időben."""
+    future = scene.pipeline._objective._future
+    scene.backend.release.set()
+    if future is not None:
+        wait([future], timeout=WAIT_SECONDS)
+    scene.backend.release.clear()
+    return scene.pipeline.pump(now)
+
+
+def test_mission_objective_is_not_hidden_before_it_is_read(make_scene):
+    scene = make_scene()
+
+    scene.show(1.0, row(1, OBJECTIVE, first_seen=1.0, stable=1))
+
+    assert scene.shown is None
+    assert scene.backend.calls == []
+
+
+def test_mission_objective_is_translated_onto_its_own_line_under_the_dialogue(make_scene):
+    scene = make_scene()
+    scene.show(1.0, row(1, LOWER, first_seen=1.0), row(5, OBJECTIVE, first_seen=1.0))
+
+    scene.read(1.04, (1, TROUBLE), (5, "Find Dunk"))
+    while_translating = scene.shown
+    scene.finish_translation()
+    finish_objective(scene, 1.3)
+
+    assert OBJECTIVE in while_translating.hidden  # az angol küldetéssor nem villan ki a fordításig
+    assert scene.shown.lines == (ShownLine(hu(TROUBLE), LOWER), ShownLine(hu("Find Dunk"), OBJECTIVE))
+    assert sorted(scene.backend.calls) == sorted([TROUBLE, "Find Dunk"])  # két külön kérés, nem egy felirat
+
+
+def test_mission_objective_alone_is_translated(make_scene):
+    scene = make_scene(only_spoken_lines=True)
+    scene.show(1.0, row(5, OBJECTIVE, first_seen=1.0))
+
+    scene.read(1.04, (5, "Go to your car"))
+    finish_objective(scene, 1.3)
+
+    assert scene.shown.lines == (ShownLine(hu("Go to your car"), OBJECTIVE),)
+
+
+def test_mission_objective_is_not_translated_again_when_the_dialogue_changes(make_scene):
+    scene = make_scene()
+    objective = row(5, OBJECTIVE, first_seen=1.0)
+    scene.show(1.0, row(1, LOWER, first_seen=1.0), objective)
+    scene.read(1.04, (1, TROUBLE), (5, "Find Dunk"))
+    scene.finish_translation()
+    finish_objective(scene, 1.3)
+
+    scene.show(3.0, row(2, LOWER, first_seen=3.0), objective)
+    scene.read(3.04, (2, HOW))
+    scene.translated(3.3)
+
+    assert scene.backend.calls.count("Find Dunk") == 1
+    assert scene.shown.lines == (ShownLine(hu(HOW), LOWER), ShownLine(hu("Find Dunk"), OBJECTIVE))
+
+
+def test_mission_objective_translation_goes_when_the_objective_goes(make_scene):
+    scene = make_scene()
+    scene.show(1.0, row(5, OBJECTIVE, first_seen=1.0))
+    scene.read(1.04, (5, "Find Dunk"))
+    finish_objective(scene, 1.3)
+
+    scene.show(2.0)
+
+    assert scene.shown is None
+
+
+@pytest.mark.parametrize("text", ["PICK UP LOOT", "Wanted"])
+def test_text_under_the_dialogue_that_is_no_sentence_is_not_translated(make_scene, text):
+    scene = make_scene()
+    scene.show(1.0, row(5, OBJECTIVE, first_seen=1.0))
+
+    scene.read(1.04, (5, text))
+
+    assert scene.shown is None and scene.backend.calls == []
 
 
 def test_row_that_is_not_a_subtitle_is_shown_again_and_never_hidden_twice(make_scene):
@@ -438,10 +532,18 @@ def test_inherited_text_expires_when_the_row_is_never_read(make_scene):
     scene.show(2.967, row(1, LOWER, first_seen=1.0, stable=60))
     scene.show(3.0, row(2, LOWER, first_seen=3.0, stable=1))
 
-    gone_at = scene.tick_until_change(3.01, 5.0)
+    expired_at = scene.tick_until_change(3.01, 5.0)
+    after_expiry = scene.shown
+    uncovered_at = expired_at
+    while scene.shown is not None and uncovered_at < 5.0:
+        uncovered_at += TICK
+        scene.pipeline.pump(uncovered_at)
 
-    assert scene.shown is None  # nem tudjuk, mit ír a sor: sem a régi fordítás, sem takarás nem marad rajta
-    assert EAGER_HIDE_SECONDS <= gone_at - 3.0 <= EAGER_HIDE_SECONDS + TICK
+    # Nem tudjuk, mit ír a sor: a régi fordítás lekerül, a sort olvasatlanként takarjuk, aztán az sem marad rajta
+    assert EAGER_HIDE_SECONDS <= expired_at - 3.0 <= EAGER_HIDE_SECONDS + TICK
+    assert after_expiry.lines == () and after_expiry.hidden == (LOWER,)
+    assert scene.shown is None
+    assert UNREAD_HIDE_SECONDS <= uncovered_at - 3.0 <= UNREAD_HIDE_SECONDS + TICK
 
 
 # --- eltűnő felirat és késő fordítás ------------------------------------------------
@@ -487,7 +589,7 @@ def test_subtitle_that_vanishes_after_a_long_still_picture_still_lingers_for_the
 
 
 def test_translation_lingers_while_an_unrelated_row_stays_on_screen(make_scene):
-    scene = make_scene()
+    scene = make_scene(translate_objectives=False)
     objective = row(5, OBJECTIVE, first_seen=1.0)
     scene.show(1.0, row(1, LOWER, first_seen=1.0), objective)
     scene.read(1.04, (1, TROUBLE), (5, "Find Dunk"))
@@ -590,6 +692,17 @@ def test_spoken_line_is_translated_when_only_spoken_lines_is_on(make_scene):
 
     assert scene.backend.calls == ["Stop talking."]  # a beszélő nevét nem küldjük fordításra
     assert scene.shown.lines == (ShownLine("Lucia: " + hu("Stop talking."), LOWER),)
+
+
+def test_spoken_line_under_a_music_caption_is_translated_when_only_spoken_lines_is_on(make_scene):
+    scene = make_scene(only_spoken_lines=True)
+    scene.show(1.0, row(1, UPPER, first_seen=1.0), row(2, LOWER, first_seen=1.0))
+
+    scene.read(1.04, (1, "[♪ Money For Nothing – Dire Straits ♪]"), (2, "Lucia: Let's go!"))
+    scene.translated(1.3)
+
+    assert scene.backend.calls == ["Let's go!"]
+    assert scene.shown.lines == (ShownLine("Lucia: " + hu("Let's go!"), LOWER),)
 
 
 def test_switching_only_spoken_lines_on_removes_a_translated_mission_text(make_scene):

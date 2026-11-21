@@ -22,11 +22,11 @@ from .translation_store import TranslationStore
 CACHE_SIZE = 2000
 MAX_SPEAKER_NAME_LENGTH = 24
 # „Jason: Gyere már!” — a beszélő nevét nem fordítjuk le
-_SPEAKER_PREFIX = re.compile(r"^([A-Z][\w.'\- ]{0,%d}):\s+(.+)$" % (MAX_SPEAKER_NAME_LENGTH - 1))
+_SPEAKER_PREFIX = re.compile(r"^([A-Z][\w.'&\- ]{0,%d}):\s+(.+)$" % (MAX_SPEAKER_NAME_LENGTH - 1))
 # Új beszélő kezdete egy lezárt mondat után: „… breath now. Lucia: Stop talking.”
 # „In Spanish”: nem beszélő neve, hanem megjegyzés a nyelvről, ezért ezt is lefordítjuk
 _LANGUAGE_NOTE = re.compile(r"^In [A-Z][a-z]+$")
-_SPEAKER_BOUNDARY = re.compile(r"(?<=[.!?…])\s+(?=[A-Z](?:[^\W\d_]|[ .'-]){0,30}:\s)")
+_SPEAKER_BOUNDARY = re.compile(r"(?<=[.!?…])\s+(?=[A-Z](?:[^\W\d_]|[ .'&-]){0,30}:\s)")
 
 KEY_ENV_VARS = {"deepl": "DEEPL_API_KEY", "claude": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
 # „auto” esetén ebben a sorrendben választunk abból, amihez van kulcs
