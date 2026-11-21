@@ -21,8 +21,6 @@
   "openai_model": "gpt-4.1-mini",
   "hide_original": true,
   "panel_opacity": 0,
-  "subtitle_x": 0.4948,
-  "subtitle_y": 0.8463,
   "font_path": "C:/Windows/Fonts/segoeui.ttf",
   "font_size_ratio": 0.024,
   "fullscreen": true,
