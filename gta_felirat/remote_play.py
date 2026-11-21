@@ -20,6 +20,7 @@ import cv2
 from .app_base import SubtitleAppBase
 from .band_capture import BandCapture, WindowContentGrabber
 from .band_feed import SOURCE_NONE, BandFeed, CapturedBand
+from .clean_output import CleanOutput
 from .config import AppConfig
 from .eager_hide import EagerCover, with_eager_boxes
 from .feed_gate import FeedGate
@@ -80,6 +81,7 @@ class RemotePlayApp(SubtitleAppBase):
         self._settings = self._create_settings_window(on_preview=self._set_preview, on_close=self.stop)
         self._overlay = OverlayWindow(self._settings.root, self._subtitles, self._region_editor,
                                       config.visible_in_recordings)
+        self._clean = CleanOutput(self._hwnd, config)  # a nézőknek: késleltetett kép, csak a kész fordítással
         self._row_path = RowPath(self._pipeline, reader.read_rows, config.min_text_score,
                                  tk_scheduler(self._settings.root, self._on_wake), whole_band=config.whole_band_text)
 
@@ -96,6 +98,8 @@ class RemotePlayApp(SubtitleAppBase):
     def run(self) -> None:
         root = self._settings.root
         root.after(TICK_MS, self._tick)
+        if self._config.clean_output:
+            self._clean.start()
         if self._config.fast_capture:
             self._feed.start()  # el nem indítva nincs sávja: a régi, olvasásonkénti rögzítés megy
         try:
@@ -103,6 +107,7 @@ class RemotePlayApp(SubtitleAppBase):
         except KeyboardInterrupt:
             logger.info(t("remote.ctrl_c_quit"))
         finally:
+            self._clean.stop()
             self._feed.stop()
             self._row_path.close()
             self._pipeline.shutdown()
@@ -120,6 +125,11 @@ class RemotePlayApp(SubtitleAppBase):
         self._overlay.needs_redraw = True
 
     def _on_config_changed(self) -> None:
+        self._clean.update_config(self._config)
+        if self._config.clean_output:
+            self._clean.start()
+        else:
+            self._clean.stop()
         self._row_path.set_whole_band(self._config.whole_band_text)
         self._overlay.set_capture_visible(self._config.visible_in_recordings)
         self._overlay.needs_redraw = True
@@ -204,6 +214,8 @@ class RemotePlayApp(SubtitleAppBase):
         reads_window_content = self._gate.band() is not None or self._capture.uses_window_content
         hide_original = effective_hide_original(self._config, ocr_sees_overlay=not reads_window_content)
         backdrop, shown = self._picture(now, reads_rows, hide_original)
+        if self._clean.is_running:
+            self._clean.history.record(now, shown, self._pipeline.current_source)
         if shown is not None and backdrop is not self._drawn_backdrop:
             self._overlay.needs_redraw = True  # a takarás kövesse a mozgó játékképet
         if shown != self._drawn_shown:

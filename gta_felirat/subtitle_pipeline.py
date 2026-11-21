@@ -58,6 +58,11 @@ class SubtitlePipeline:
             self._reader.set_region(config.subtitle_region)  # a figyelt sávot egérrel áthelyezték
         self._config = config
 
+    @property
+    def current_source(self) -> str:
+        """A most kiírt felirat angol szövege (azonosítója); "" ha nincs felirat."""
+        return self._tracker.current
+
     def ocr_due(self, now: float) -> bool:
         """Kell-e új kép? (A Remote Play módban csak ilyenkor rögzítünk képernyőt.)"""
         return self._ocr_future is None and now >= self._next_ocr_at

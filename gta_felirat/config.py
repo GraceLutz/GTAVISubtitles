@@ -27,6 +27,9 @@ DEFAULT_SPEAKER_COLOR = "#7ECFD6"
 HEX_COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
 MIN_WEBCAM_WIDTH_RATIO = 0.05
 MAX_WEBCAM_WIDTH_RATIO = 0.5
+# A tiszta kép késleltetése: rövidebbnél a fordítás nem ér be, hosszabbnál a nézőnek már zavaró
+MIN_CLEAN_DELAY_SECONDS = 0.5
+MAX_CLEAN_DELAY_SECONDS = 5.0
 
 
 class ConfigError(ValueError):
@@ -76,6 +79,9 @@ class AppConfig:
     only_spoken_lines: bool = True  # csak a „Név: szöveg” párbeszédsorokat fordítja
     translate_objectives: bool = True  # a küldetésutasítás sorát is lefordítja, a saját sorára
     streamer_mode: bool = False  # a sértő szavakat (n-szó stb.) kicsillagozva mutatja (streamer_filter)
+    # Külön ablak a nézőknek (OBS, Medal): a játékkép késleltetve, rajta már csak a kész magyar felirat
+    clean_output: bool = False
+    clean_output_delay_seconds: float = 1.0
     # Remote Play módban a feliratsáv folyamatos rögzítése külön szálon (gyorsabb takarás és olvasás);
     # false: a régi, olvasásonkénti rögzítés, ha a folyamatos valamiért gondot okozna
     fast_capture: bool = True
@@ -124,6 +130,9 @@ class AppConfig:
             raise ConfigError(t("config.min_score_range"))
         if self.ui_language != AUTO and self.ui_language not in UI_LANGUAGES:
             raise ConfigError(t("config.ui_language_choice", choices=sorted(UI_LANGUAGES)))
+        if not MIN_CLEAN_DELAY_SECONDS <= self.clean_output_delay_seconds <= MAX_CLEAN_DELAY_SECONDS:
+            raise ConfigError(t("config.clean_delay_range", minimum=MIN_CLEAN_DELAY_SECONDS,
+                                maximum=MAX_CLEAN_DELAY_SECONDS))
 
     def _validate_subtitle_panel(self) -> None:
         if not self.target_lang.strip():

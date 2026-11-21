@@ -136,6 +136,22 @@ Ha a Remote Play ablak tartalma valamiért nem rögzíthető (a program ilyenkor
 **Streamereknek:** a program a GitHubról letölthető, a telepítés lépései fent vannak. Mindenki a
 saját fordítókulcsát adja meg a panelen (DeepL ingyenes kulcs is elég).
 
+#### Tiszta kép a nézőknek (nem kötelező)
+
+Élőben az új angol sor első pillanata átcsúszhat, és amíg a fordítás megérkezik, csak
+takarás látszik. Ha a nézők ebből semmit se lássanak, kapcsold be a panel „Tiszta kép a
+nézőknek” kapcsolóját. Megnyílik egy külön ablak, benne a játék képe **~1 mp késéssel**:
+mire egy képkocka kikerül, a feliratának fordítása elkészül, így csak a kész magyar szöveg
+látszik rajta, angol soha.
+
+- OBS-ben a monitor helyett a *„Tiszta kép – ezt az ablakot vedd fel”* ablakot add hozzá
+  *Ablak-felvétel* (Window Capture) forrásként (Medalban: ezt az ablakot rögzítsd).
+- A kép késik, ezért a játék hangját is késleltesd ugyanennyivel OBS-ben
+  (*Speciális hangtulajdonságok → Szinkron eltolás*: `1000` ms).
+- Te továbbra is az élő képen játszol; a tiszta ablak csak a nézőknek szól.
+- Kb. 200 MB-tal több memóriát használ. Alapból ki van kapcsolva; a késés a
+  `clean_output_delay_seconds` beállítással változtatható (0,5–5 mp).
+
 Más ablak fölé is teheted (pl. Xbox alkalmazás, böngészős felhőjáték), az ablak
 pontos címével:
 
@@ -297,6 +313,8 @@ Az overlay ablak csak képet mutat. A hanghoz válassz egyet:
 | `visible_in_recordings` | `true` | a felirat látszik a Medal/OBS monitorfelvételen és streamen |
 | `only_spoken_lines` | `true` | csak a „Név: szöveg” párbeszédsorok fordítása |
 | `streamer_mode` | `false` | streamer mód: a sértő szavak kicsillagozva |
+| `clean_output` | `false` | Remote Play mód: késleltetett tiszta kép a nézőknek külön ablakban (csak a kész fordítás) |
+| `clean_output_delay_seconds` | `1.0` | a tiszta kép késése (0,5–5 mp); a stream hangját is ennyivel késleltesd |
 | `fast_capture` | `true` | Remote Play mód: a feliratsáv folyamatos rögzítése külön szálon (gyorsabb takarás és olvasás); `false` értékkel visszaáll az olvasásonkénti rögzítés |
 | `row_reading` | `true` | Remote Play mód: soronkénti olvasás – csak az újonnan megjelent feliratsort olvassa be (gyorsabb fordítás, kisebb terhelés); a `fast_capture` kell hozzá és legalább 1600 képpont széles játékkép, különben mindig a teljes sávot olvassa. `false` értékkel mindig a teljes sávot olvassa |
 | `panel_opacity` | `245` | a panel háttere, 0 (átlátszó) – 255 (teljesen fedő) |

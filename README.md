@@ -142,6 +142,22 @@ the translation goes below the English text instead, because the OCR would see t
 **For streamers:** the program can be downloaded from GitHub; the setup steps are above.
 Everyone enters their own translator key in the panel (a free DeepL key is enough).
 
+#### Clean picture for viewers (optional)
+
+Live, the first moment of a new English line can slip through, and until the translation
+arrives only a cover shows. If viewers should see none of that, turn on the panel's
+“Clean picture for viewers” switch. A separate window opens with the game picture
+**delayed by ~1 second**: by the time a frame is shown, the translation of its subtitle is
+ready, so it shows only the finished Hungarian text, never the English one.
+
+- In OBS add the window *“Clean picture – capture this window”* as a *Window Capture*
+  source (in Medal: capture that window), instead of the monitor.
+- The picture is delayed, so delay the game audio by the same amount in OBS
+  (*Advanced Audio Properties → Sync Offset*: `1000` ms).
+- You keep playing on the live picture; the clean window is for viewers only.
+- It uses about 200 MB more memory. Off by default; the delay can be set with
+  `clean_output_delay_seconds` (0.5–5 s).
+
 You can also put it over another window (e.g. the Xbox app, a cloud game in the browser),
 using the window's exact title:
 
@@ -309,6 +325,8 @@ The overlay window only shows the picture. For sound, pick one:
 | `visible_in_recordings` | `true` | the subtitle shows up in Medal/OBS monitor recordings and on stream |
 | `only_spoken_lines` | `true` | translate only “Name: text” dialogue lines |
 | `streamer_mode` | `false` | streamer mode: slurs starred out |
+| `clean_output` | `false` | Remote Play mode: delayed clean picture for viewers in a separate window (only the finished translation) |
+| `clean_output_delay_seconds` | `1.0` | delay of the clean picture (0.5–5 s); delay the stream audio by the same amount |
 | `fast_capture` | `true` | Remote Play mode: capture the subtitle band continuously on its own thread (faster cover and reading); set `false` to go back to one capture per read |
 | `row_reading` | `true` | Remote Play mode: read row by row – only a newly appeared subtitle row is read (faster translation, less CPU); needs `fast_capture` and a game picture at least 1600 px wide, otherwise the whole bar is read every time. Set `false` to always read the whole bar |
 | `panel_opacity` | `245` | panel background, 0 (transparent) – 255 (fully opaque) |
