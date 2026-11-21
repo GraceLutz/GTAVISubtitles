@@ -159,11 +159,37 @@ def _line_by_line_jobs(config: AppConfig, view: LayerView, shown: Shown,
         rendered = render_subtitle(line.text, config.font_path, font_size, int(view.width * max_width), (0, 0), 0,
                                    hex_to_rgb(config.speaker_color))
         texts.append(TextJob(rendered, *subtitle_position(rendered, line.anchor, view.width, view.height)))
+    # A szegély miatt a szomszéd sorok kirajzolása kicsit fedheti egymást; ennél többet nem
+    texts = _stacked(texts, view.height, allowed_overlap=font_size // 2)
     left, top = min(job.x for job in texts), min(job.y for job in texts)
     right = max(job.x + job.rendered.width for job in texts)
     bottom = max(job.y + job.rendered.height for job in texts)
     panel = BoxJob(clip(Box(left, top, right, bottom), view.width, view.height), config.panel_opacity)
     return panel, tuple(texts), (left, top, right - left, bottom - top)
+
+
+def _stacked(texts: list[TextJob], frame_height: int, allowed_overlap: int) -> list[TextJob]:
+    """Több beszélő sora ne lógjon egymásra: a lejjebb álló sor kerül az előző alá.
+
+    Minden sor a saját angol sora helyén indul; csak akkor mozdul, ha a fölötte álló fordítás (pl. két
+    sorba tört magyar mondat) rálógna. Ha így a kép aljáról kicsúszna, az egész csoport feljebb kerül.
+    """
+    ordered = sorted(texts, key=lambda job: job.y)
+    placed: list[TextJob] = []
+    for job in ordered:
+        if placed:
+            previous = placed[-1]
+            lowest_top = previous.y + previous.rendered.height - allowed_overlap
+            job = TextJob(job.rendered, job.x, max(job.y, lowest_top))
+        placed.append(job)
+    for index in range(len(placed) - 1, -1, -1):
+        job = placed[index]
+        highest_top = frame_height - job.rendered.height
+        if index + 1 < len(placed):
+            following = placed[index + 1]
+            highest_top = min(highest_top, following.y - job.rendered.height + allowed_overlap)
+        placed[index] = TextJob(job.rendered, job.x, max(min(job.y, highest_top), 0))
+    return placed
 
 
 def _block_text(config: AppConfig, view: LayerView, shown: Shown,
