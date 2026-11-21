@@ -121,6 +121,7 @@ class SettingsWindow:
         self._translate_objectives = tk.BooleanVar()
         self._thin_font = tk.BooleanVar()
         self._visible_in_recordings = tk.BooleanVar()
+        self._streamer_mode = tk.BooleanVar()
         ttk.Separator(frame).grid(row=6, column=0, columnspan=3, sticky="ew", pady=10)
         ttk.Label(frame, text=t("settings.font_size")).grid(row=7, column=0, sticky="w")
         font_scale = tk.Scale(frame, variable=self._font, orient="horizontal", length=220,
@@ -151,6 +152,9 @@ class SettingsWindow:
                         variable=self._visible_in_recordings,
                         command=lambda: self._change({"visible_in_recordings": self._visible_in_recordings.get()})
                         ).grid(row=16, column=0, columnspan=3, sticky="w")
+        ttk.Checkbutton(frame, text=t("settings.streamer_mode"), variable=self._streamer_mode,
+                        command=lambda: self._change({"streamer_mode": self._streamer_mode.get()})
+                        ).grid(row=17, column=0, columnspan=3, sticky="w")
         ttk.Button(frame, text=t("settings.reset_position"),
                    command=lambda: self._change({"subtitle_x": None, "subtitle_y": None})
                    ).grid(row=10, column=1, columnspan=2, sticky="w", pady=(4, 0))
@@ -217,6 +221,7 @@ class SettingsWindow:
             self._translate_objectives.set(config.translate_objectives)
             self._thin_font.set(config.font_path == THIN_FONT_PATH)
             self._visible_in_recordings.set(config.visible_in_recordings)
+            self._streamer_mode.set(config.streamer_mode)
             field_name = AI_MODEL_FIELDS.get(config.translator)
             self._model.set(getattr(config, field_name) if field_name else "")
             self._model_entry.configure(state="normal" if field_name else "disabled")

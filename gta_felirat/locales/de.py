@@ -23,6 +23,7 @@ MESSAGES: dict[str, str] = {
     "settings.preview": "Beispieltext und überwachten Bereich anzeigen (zum Einrichten)",
     "settings.only_spoken": "Nur gesprochene Zeilen („Name: Text“-Zeilen)",
     "settings.translate_objectives": "Missionsziele auch übersetzen (eigene Zeile)",
+    "settings.streamer_mode": "Streamer-Modus (Beleidigungen mit Sternchen, z. B. n****)",
     "settings.thin_font": "Dünne Schrift (wie in GTA)",
     "settings.visible_in_recordings": "In Aufnahmen und Streams anzeigen (Medal, OBS, Twitch, Kick, YouTube)",
     "settings.key_not_needed": "Kein Schlüssel nötig",

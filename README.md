@@ -189,6 +189,9 @@ blurred, soft-edged version of the game picture, even if you drag the panel else
 - **Spoken lines only (“Name: text” lines):** only translates “Name: text” dialogue
   lines; mission text, signs, menus and the phone-call display are not translated (on by
   default).
+- **Streamer mode:** slurs (the n-word, homophobic and other slurs, in Hungarian too) are
+  shown starred out, e.g. `n****`. A separate switch, off by default; it only changes the
+  drawn text, not the translation, so it can be turned on and off at any time.
 - At the bottom, the status: which translator is running, **the measured translation time
   (ms)**, and if something is wrong, what the problem is.
 
@@ -303,6 +306,7 @@ The overlay window only shows the picture. For sound, pick one:
 | `hide_original` | `true` | cover the English text |
 | `visible_in_recordings` | `true` | the subtitle shows up in Medal/OBS monitor recordings and on stream |
 | `only_spoken_lines` | `true` | translate only “Name: text” dialogue lines |
+| `streamer_mode` | `false` | streamer mode: slurs starred out |
 | `fast_capture` | `true` | Remote Play mode: capture the subtitle band continuously on its own thread (faster cover and reading); set `false` to go back to one capture per read |
 | `row_reading` | `true` | Remote Play mode: read row by row – only a newly appeared subtitle row is read (faster translation, less CPU); needs `fast_capture` and a game picture at least 1600 px wide, otherwise the whole bar is read every time. Set `false` to always read the whole bar |
 | `panel_opacity` | `245` | panel background, 0 (transparent) – 255 (fully opaque) |

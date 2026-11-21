@@ -73,6 +73,7 @@ class AppConfig:
     visible_in_recordings: bool = True
     only_spoken_lines: bool = True  # csak a „Név: szöveg” párbeszédsorokat fordítja
     translate_objectives: bool = True  # a küldetésutasítás sorát is lefordítja, a saját sorára
+    streamer_mode: bool = False  # a sértő szavakat (n-szó stb.) kicsillagozva mutatja (streamer_filter)
     # Remote Play módban a feliratsáv folyamatos rögzítése külön szálon (gyorsabb takarás és olvasás);
     # false: a régi, olvasásonkénti rögzítés, ha a folyamatos valamiért gondot okozna
     fast_capture: bool = True

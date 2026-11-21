@@ -179,6 +179,9 @@ elmosott, lágy szélű változata takarja, akkor is, ha a panelt máshová húz
 - **Vékony betű (mint a GTA-ban):** a beszélő neve türkiz, a szöveg fehér, halvány árnyékkal.
 - **Csak a kimondott szöveg:** csak a „Név: szöveg” párbeszédsorokat fordítja; küldetésszöveg,
   tábla, menü, telefonhívás-kijelző nem megy fordításra (alapból bekapcsolva).
+- **Streamer mód:** a sértő szavakat (n-szó, homofób és más gyalázkodás, magyarul is) kicsillagozva
+  mutatja, pl. `n****`. Külön kapcsolható, alapból kikapcsolva; a fordítást nem változtatja meg, csak
+  a kirajzolt szöveget, így bármikor ki-be kapcsolható.
 - Alul az állapot: melyik fordító fut, **a mért fordítási idő (ms)**, és ha hiba van, mi a gond.
 
 Minden módosítás azonnal érvényes, és bekerül a `config.json`-ba (a kulcsok kivételével).
@@ -291,6 +294,7 @@ Az overlay ablak csak képet mutat. A hanghoz válassz egyet:
 | `hide_original` | `true` | az angol szöveg takarása |
 | `visible_in_recordings` | `true` | a felirat látszik a Medal/OBS monitorfelvételen és streamen |
 | `only_spoken_lines` | `true` | csak a „Név: szöveg” párbeszédsorok fordítása |
+| `streamer_mode` | `false` | streamer mód: a sértő szavak kicsillagozva |
 | `fast_capture` | `true` | Remote Play mód: a feliratsáv folyamatos rögzítése külön szálon (gyorsabb takarás és olvasás); `false` értékkel visszaáll az olvasásonkénti rögzítés |
 | `row_reading` | `true` | Remote Play mód: soronkénti olvasás – csak az újonnan megjelent feliratsort olvassa be (gyorsabb fordítás, kisebb terhelés); a `fast_capture` kell hozzá és legalább 1600 képpont széles játékkép, különben mindig a teljes sávot olvassa. `false` értékkel mindig a teljes sávot olvassa |
 | `panel_opacity` | `245` | a panel háttere, 0 (átlátszó) – 255 (teljesen fedő) |

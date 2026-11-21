@@ -23,6 +23,7 @@ MESSAGES: dict[str, str] = {
     "settings.preview": "Mintaszöveg és a figyelt sáv mutatása (beállításhoz)",
     "settings.only_spoken": "Csak a kimondott szöveg („Név: szöveg” sorok)",
     "settings.translate_objectives": "A küldetésszöveget is fordítsa (külön sorban)",
+    "settings.streamer_mode": "Streamer mód (a sértő szavak kicsillagozva, pl. n****)",
     "settings.thin_font": "Vékony betű (mint a GTA-ban)",
     "settings.visible_in_recordings": "Látszódjon a felvételen és streamen (Medal, OBS, Twitch, Kick, YouTube)",
     "settings.key_not_needed": "Nem kell kulcs",

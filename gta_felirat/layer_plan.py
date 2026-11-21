@@ -7,13 +7,14 @@ vagy gyorsan, helyben az átlátszó ablak képpontjaiba (layer_compositor).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .config import AppConfig
 from .frosted_cover import SIDE_FEATHER_RATIO, cover_area
 from .ocr import Box
 from .overlay import (LINE_SPACING_RATIO, PANEL_PADDING_RATIO, RenderedSubtitle, SpeakerColors, beside_original_position,
                       centered_position, hex_to_rgb, render_subtitle, subtitle_position)
+from .streamer_filter import censor
 
 MIN_FONT_PX = 12
 ORIGINAL_COVER_OPACITY = 255
@@ -108,10 +109,18 @@ def make_plan(config: AppConfig, view: LayerView, shown: Shown | None) -> LayerP
     last_cover = union(bounds) if bounds else None
     if not shown.text:
         return LayerPlan(covers, strength, last_cover=last_cover)  # csak takarás: a fordítás még úton van
+    if config.streamer_mode:
+        shown = _censored(shown)
     panel, texts, rect = _text_jobs(config, view, shown)
     is_framed = view.is_dragging or view.is_preview  # a Minta módban is látszik, meddig ér a panel
     outline = Box(rect[0], rect[1], rect[0] + rect[2], rect[1] + rect[3]) if is_framed else None
     return LayerPlan(covers, strength, panel, texts, rect, last_cover, outline)
+
+
+def _censored(shown: Shown) -> Shown:
+    """A kirajzolandó szöveg a sértő szavak kicsillagozásával (streamer mód)."""
+    lines = tuple(replace(line, text=censor(line.text)) for line in shown.lines)
+    return replace(shown, text=censor(shown.text), lines=lines)
 
 
 def _cover_jobs(view: LayerView, shown: Shown) -> tuple[tuple[CoverJob | BoxJob, ...], list[Box]]:
