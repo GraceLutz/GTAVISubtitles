@@ -7,6 +7,7 @@ from gta_felirat.frosted_cover import Backdrop
 from gta_felirat.line_placement import (PENDING_HIDE_SECONDS, PendingLines, TranslatedLine, build_shown,
                                         match_lines, pair_lines, place_lines)
 from gta_felirat.ocr import Box, OcrLine, OcrResult, spoken_lines
+from gta_felirat.overlay import MAX_TEXT_WIDTH_RATIO
 from gta_felirat.subtitle_layer import Shown, ShownLine, SubtitleLayer
 from gta_felirat.subtitle_pipeline import SubtitlePipeline
 from gta_felirat.subtitle_tracker import normalize
@@ -321,5 +322,21 @@ def test_translation_of_a_two_row_sentence_may_wrap_instead_of_running_off_scree
     layer.draw(canvas, Shown(long_text, two_rows, (ShownLine(long_text, two_rows),)), True)
 
     _left, _top, width, height = layer.last_rect
-    assert width <= 1920 * 0.62 + 40
+    assert width <= 1920 * MAX_TEXT_WIDTH_RATIO + 40
     assert height > 60  # két sorba tört
+
+
+def test_translation_of_a_two_row_sentence_uses_the_wider_area_before_wrapping():
+    # 62%-on két sorba törne, a szélesebb sávban egy sorban marad
+    layer = SubtitleLayer(AppConfig(hide_original=True, panel_opacity=0, font_size_ratio=0.024),
+                          on_change=lambda _updates: None)
+    two_rows = Box(520, 915, 1400, 994)
+    text = ("A legtöbb estén a Pelican Valleyben, a Thorpe Adventures közelében leszek, "
+            "ha keresel, csak szólj előre, és ott leszek.")
+    canvas = np.zeros((1080, 1920, 4), np.uint8)
+
+    layer.draw(canvas, Shown(text, two_rows, (ShownLine(text, two_rows),)), True)
+
+    _left, _top, width, height = layer.last_rect
+    assert width > 1920 * 0.62
+    assert height < 60  # egy sorban maradt
