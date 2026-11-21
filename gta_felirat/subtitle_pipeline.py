@@ -114,6 +114,10 @@ class SubtitlePipeline:
             result = future.result()
         except Exception:
             logger.exception(t("pipeline.ocr_error"))
+            # A sikertelen olvasás üres olvasásnak számít: ha tartósan hibázik (pl. sötét képen), a felirat
+            # a szokásos várakozás után eltűnik (egy-egy hiba nem villant: a várakozási idő véd ellene)
+            if isinstance(self._tracker.update("", now), SubtitleCleared):
+                self._forget_subtitle()
             return
         if self._is_own_translation(result.text):
             return  # a saját kiírt fordításunkat olvastuk vissza, nem új felirat

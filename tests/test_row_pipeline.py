@@ -730,3 +730,59 @@ def test_timer_does_not_keep_the_subtitle_alive_for_the_full_read_path(make_scen
     scene.read_fully(5.05)  # a régi út már üres sávot olvas: a felirat régen eltűnt
 
     assert scene.shown is None
+
+
+# --- a felirat eltűnése álló jeleneten ---------------------------------------------------
+
+VIDEO_FRAME_GAP = 0.033  # a capture card képét mutató ablak (pl. Veyra) álló jeleneten is ~30 képet küld másodpercenként
+
+
+def test_translation_disappears_while_a_video_window_keeps_sending_the_empty_band(make_scene):
+    scene = make_scene()
+    scene.speak(TROUBLE, LOWER)
+    scene.show(2.0, row(1, LOWER, first_seen=1.0, stable=30))
+
+    now, next_frame, gone_at = 2.033, 2.033, None
+    while now < 6.0 and gone_at is None:
+        if now >= next_frame:
+            scene.show(now)  # az angol sor eltűnt: minden képkockán ugyanaz az üres sáv
+            next_frame += VIDEO_FRAME_GAP
+        else:
+            scene.pipeline.pump(now)
+        gone_at = now if scene.shown is None else None
+        now += TICK
+
+    assert gone_at is not None
+    assert gone_at - 2.033 <= HOLD + RECHECK_SECONDS + VIDEO_FRAME_GAP + TICK
+
+
+def test_failed_reads_on_the_full_reading_path_do_not_keep_the_translation_up(make_scene):
+    class FailingReader:
+        def read_band(self, band, area):
+            raise RuntimeError("the capture failed")
+
+    scene = make_scene(reader=FailingReader())
+    scene.speak(TROUBLE, LOWER)
+    scene.pipeline.suspend_rows()  # a régi, teljes olvasású út folytatja
+
+    scene.read_fully(1.5)
+    lingering = scene.shown
+    scene.read_fully(1.5 + HOLD)
+
+    assert lingering is not None  # egy hibás olvasás még nem tünteti el (nem villan)
+    assert scene.shown is None
+
+
+@pytest.mark.parametrize("missing_captures", [1, 2])
+def test_translation_disappears_when_the_picture_stops_while_its_row_is_only_remembered(make_scene,
+                                                                                       missing_captures):
+    scene = make_scene()
+    scene.speak(TROUBLE, LOWER)
+    scene.show(2.0, row(1, LOWER, first_seen=1.0, stable=30))
+    for step in range(1, missing_captures + 1):  # elhalványul: a sorkövető még emlékszik rá
+        scene.show(2.0 + step * VIDEO_FRAME_GAP, row(1, LOWER, first_seen=1.0, stable=30, missing=step))
+
+    gone_at = scene.tick_until_change(2.1, 6.0)  # álló jelenet: több kép nem jön
+
+    assert gone_at is not None
+    assert gone_at - 2.033 <= HOLD + RECHECK_SECONDS + TICK

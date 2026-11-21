@@ -42,6 +42,8 @@ MIN_SHOUTED_WORD_LETTERS = 2  # az „I” és az „A” nem számít
 MAX_SHOUTED_WORD_RATIO = 0.5
 # Beszélő neve: csak betűk (számjegy nem, így a hívás-időzítő „Jason 00:04” nem beszélő)
 SPEAKER_PATTERN = re.compile(r"^[A-Z](?:[^\W\d_]|[ .'-]){0,30}:\s*\S")
+# A sor elején magában álló kettőspont vagy pontosvessző (a beszélő neve nélkül maradt)
+LEADING_ORPHAN_PUNCTUATION = re.compile(r"^\s*[:;]+\s*")
 # A telefonhívás kijelzője a sor végén: „… alright? Jason 00:05 D”
 CALL_TIMER_TAIL = re.compile(r"\s+(?:[A-Z][\w'.-]*\s+){0,2}\d{1,2}:\d{2}(?:\s+\S{1,2})*\s*$")
 
@@ -117,6 +119,8 @@ def strip_stray_glyphs(text: str) -> str:
 
 def drop_leading_fragment(text: str) -> str:
     """Levágja az elején álló, más szövegből becsúszott kisbetűs töredéket („oes Staff Member: …”)."""
+    # A színes beszélőnév kimaradt az olvasásból, csak az utána álló kettőspont maradt: „: Hey, …”
+    text = LEADING_ORPHAN_PUNCTUATION.sub("", text)
     tokens = text.split()
     if len(tokens) >= 2:
         first, second = tokens[0], tokens[1]

@@ -190,8 +190,12 @@ class RowPipeline(SubtitlePipeline):
             self._apply_rows(lines, confirmed, now)
         else:
             self._let_time_pass(bool(lines), now)
-        self._is_on_screen = bool(lines) and all(row.missing == 0 for row in used)  # türelmi időben nem látszik
-        self._next_deadline = self._deadline(state, pictured_at, now)
+        self._is_on_screen = bool(lines)  # csak a most is látszó sorokból áll (lásd _assemble)
+        deadline = self._deadline(state, pictured_at, now)
+        # A semmit sem változtató képkocka (pl. 30 kép/mp-es videóablak álló jeleneten) nem tolhatja
+        # későbbre a még esedékes ellenőrzést, különben az eltűnt felirat fordítása sosem tűnne el
+        is_pending = now < self._next_deadline
+        self._next_deadline = min(deadline, self._next_deadline) if is_pending else deadline
 
     def _unexpired_texts(self, now: float) -> dict[int, RowText]:
         """Az örökölt szöveg csak addig érvényes, ameddig egy olvasatlan sort eltakarnánk."""
@@ -202,8 +206,12 @@ class RowPipeline(SubtitlePipeline):
     def _assemble(self) -> tuple[tuple[OcrLine, ...], tuple[RowObs, ...]]:
         """(az elfogadott feliratsorok, a sorok, amelyekből lettek): a SubtitleReader.read_band szűrőivel."""
         min_score = self._config.min_text_score
+        # Csak a most is látszó sor számít: a türelmi időben csak emlékezett sor (missing > 0) nem tartja
+        # életben a feliratot (ha utána nem jön több kép, mert áll a jelenet, a fordítás örökre kint maradna).
+        # A szövegét megtartjuk: ha a sor visszatér, nem olvassuk újra
         legible = {row.box: row for row in self._rows
-                   if row.row_id in self._texts and self._texts[row.row_id].is_legible(min_score)}
+                   if row.missing == 0 and row.row_id in self._texts
+                   and self._texts[row.row_id].is_legible(min_score)}
         fragments = [Fragment(self._texts[row.row_id].text.strip(), box, row.whiteness)
                      for box, row in legible.items()]
         kept = select_subtitle(fragments, self._frame_center())

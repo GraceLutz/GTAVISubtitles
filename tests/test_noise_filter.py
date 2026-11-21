@@ -48,6 +48,10 @@ def test_stray_non_latin_glyphs_are_removed(raw, cleaned):
     ("Jason: Go.", "Jason: Go."),
     ("X Cop: Alright, you're good to go.", "Cop: Alright, you're good to go."),
     ("I need a ride.", "I need a ride."),
+    # A színes beszélőnév kimaradt az olvasásból, csak az utána álló kettőspont maradt meg
+    (": Hey, you got Lucia's phone.", "Hey, you got Lucia's phone."),
+    (":Hey.", "Hey."),
+    ("; Get in.", "Get in."),
 ])
 def test_leading_fragment_from_other_text_is_dropped(raw, cleaned):
     assert clean_ocr_text(raw) == cleaned
