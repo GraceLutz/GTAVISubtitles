@@ -5,6 +5,7 @@ import pytest
 
 from gta_felirat import clean_output
 from gta_felirat.clean_history import FrameBuffer, FrameRow, ShownHistory
+from gta_felirat.clean_frame import FrameAnalysis
 from gta_felirat.clean_output import CapturedFrame, CleanOutput, draw_on_frame
 from gta_felirat.config import AppConfig, ConfigError
 from gta_felirat.frosted_cover import Backdrop
@@ -176,7 +177,7 @@ def test_rows_found_in_the_background_are_covered_even_without_any_state(monkeyp
     english = np.zeros((FRAME_SIZE[1], FRAME_SIZE[0], 3), np.uint8)
     english[UPPER.top:UPPER.bottom, UPPER.left:UPPER.right] = 255
     found = Future()
-    found.set_result([FrameRow(UPPER)])
+    found.set_result(FrameAnalysis([FrameRow(UPPER)]))
     frames = FrameBuffer(keep_seconds=2.0)
     frames.push(10.0, CapturedFrame(english, found))
 

@@ -97,7 +97,7 @@ def is_covered(row: Box, boxes: list[Box]) -> bool:
     return False
 
 
-def _text_boxes(shown: Shown) -> list[Box]:
+def text_boxes(shown: Shown) -> list[Box]:
     """Ahol fordítás áll: soronként, vagy egy tömbben az eredeti felirat helyén."""
     if shown.lines:
         return [line.anchor for line in shown.lines]
@@ -106,7 +106,7 @@ def _text_boxes(shown: Shown) -> list[Box]:
 
 def _score(entry: ShownEntry, rows: list[Box], source: str, order: int) -> tuple:
     shown = entry.shown
-    anchors = _text_boxes(shown)
+    anchors = text_boxes(shown)
     missing = sum(not is_covered(row, anchors + list(shown.hidden)) for row in rows)
     translated = sum(is_covered(row, anchors) for row in rows)
     stray = sum(not any(is_covered(row, [anchor]) or is_covered(anchor, [row]) for row in rows)
@@ -122,8 +122,8 @@ def pick_shown(entries: list[ShownEntry], rows: list[FrameRow], source: str) -> 
     found = [row.box for row in rows]
     best = max(entries, key=lambda entry: _score(entry, found, source, entries.index(entry)), default=None)
     shown = best.shown if best is not None else None
-    boxes = [] if shown is None else _text_boxes(shown) + list(shown.hidden)
-    known = [box for entry in entries for box in _text_boxes(entry.shown) + list(entry.shown.hidden)]
+    boxes = [] if shown is None else text_boxes(shown) + list(shown.hidden)
+    known = [box for entry in entries for box in text_boxes(entry.shown) + list(entry.shown.hidden)]
     missing = tuple(row.box for row in rows
                     if (row.sure or is_covered(row.box, known)) and not is_covered(row.box, boxes))
     if not missing:
