@@ -135,9 +135,9 @@ WHITE = (255, 255, 255)
 OFF_WHITE = (186, 186, 186)  # a tömörített kép fehér betűje világos háttér (rendszám) előtt
 
 
-def text_span(parts, thickness):
+def text_span(parts, thickness, font_scale=FONT_SCALE):
     """A középre igazított, darabokból álló sor első és utolsó oszlopa a teljes képen."""
-    width = sum(cv2.getTextSize(text, FONT, FONT_SCALE, thickness)[0][0] for text, _colour in parts)
+    width = sum(cv2.getTextSize(text, FONT, font_scale, thickness)[0][0] for text, _colour in parts)
     return AREA.left + CENTER_X - width / 2, AREA.left + CENTER_X + width / 2
 
 
@@ -169,6 +169,22 @@ def test_bold_objective_row_is_found_with_its_whole_text(parts):
     rows = ROW_FINDER.detect(band, AREA, FRAME)
 
     left, right = text_span(parts, thickness=2)
+    assert len(rows) == 1 and not rows[0].sure
+    assert rows[0].box.left <= left and rows[0].box.right >= right
+
+
+@pytest.mark.parametrize("parts", [
+    # Valós hiba: a rövid fehér rész a középtől balra áll, a tükrös vágás egyetlen szóra szűkítette
+    pytest.param([("Go to the ", WHITE), ("office", PINK)], id="short white part off the centre"),
+    pytest.param([("Leave ", WHITE), ("Delights", PINK)], id="one short white word"),
+    pytest.param([("Rob the ", WHITE), ("safe", PINK)], id="short and dense"),
+])
+def test_short_bold_objective_row_is_found_with_its_whole_text(parts):
+    band = band_with_parts(parts, OBJECTIVE_BASELINE, thickness=2, font_scale=BIGGER_OBJECTIVE_FONT)
+
+    rows = ROW_FINDER.detect(band, AREA, FRAME)
+
+    left, right = text_span(parts, thickness=2, font_scale=BIGGER_OBJECTIVE_FONT)
     assert len(rows) == 1 and not rows[0].sure
     assert rows[0].box.left <= left and rows[0].box.right >= right
 

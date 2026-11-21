@@ -277,7 +277,8 @@ def _ink_of(core: np.ndarray, part: Span, measures: Measures, named: np.ndarray 
     wider = _with_name(named, column_ink, lines, extent, measures) if named is not None else None
     if wider is not None:  # a színes név a sorhoz tartozik: a magpixeleket is vele együtt számoljuk
         column_ink, extent = _column_ink(named, lines), wider
-    if abs((extent[0] + extent[1]) / 2.0 - measures.center) > params.sure_offset * measures.scale:
+    is_off_centre = abs((extent[0] + extent[1]) / 2.0 - measures.center) > params.sure_offset * measures.scale
+    if params.trims_off_centre and is_off_centre:
         cut = _symmetric_trim(column_ink, extent, measures.center, measures.px(params.trim_slack))
         if cut is not None:
             extent, trimmed = cut, True

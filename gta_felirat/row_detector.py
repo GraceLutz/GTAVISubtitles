@@ -84,6 +84,9 @@ class Params:
     row_min_height: float = 13.0
     row_min_width: float = 26.0
     trim_slack: float = 6.0  # a sor végének tükörképétől ennyire keresünk rést, ahol a ráragadt folt levágható
+    # A középtől félre álló sort a középre tükrözve vágjuk (a ráragadt foltot levágja); a küldetéssor fehér része
+    # a színes kulcsszó miatt áll félre, ott a vágás egy szóra szűkítené, a sor középre állását utólag mérjük
+    trims_off_centre: bool = True
     # Elfogadás (laza): érdemes-e a sort odaadni a szövegolvasónak
     accept_offset: float = 45.0  # |sorközép − képközép|: a valódi sor ±2 px-en belül van, ha nem ragadt rá semmi
     min_fill: float = 0.07  # magpixel / festett doboz: valódi sor 0,09–0,21 (fehér pólón 0,28)

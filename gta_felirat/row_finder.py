@@ -28,10 +28,12 @@ MIN_FRAME_WIDTH = 1600
 OBJECTIVE_STRIP_ABOVE_RATIO = 0.01
 OBJECTIVE_STRIP_MIN_RATIO = 0.04
 # A küldetésutasítás betűje vastagabb vonalú a párbeszédénél: a magpixelek átlagos futáshossza (vonalvastagság)
-# 1080p-s videófelvételen 3,1–4,0 px, az ablakból rögzített képen 4,2–5,0 px (a párbeszédé 1,55–2,7, a kereső
-# határa 3,2), és ritkábbak a vonásai
-OBJECTIVE_MAX_RUN = 5.6
+# 1080p-s videófelvételen 3,1–4,0 px, az ablakból rögzített képen 4,2–5,0 px, rövid fehér résznél („Leave
+# Delights”) 6,2-ig (a párbeszédé 1,55–2,7, a kereső határa 3,2), és ritkábbak a vonásai
+OBJECTIVE_MAX_RUN = 6.6
 OBJECTIVE_MIN_STROKE_DENSITY = 0.05
+# A rövid, félkövér fehér rész („Go to the”, „Rob the”) magpixel/doboz aránya 0,30–0,39 (a párbeszédé legfeljebb 0,30)
+OBJECTIVE_MAX_FILL = 0.45
 # A küldetéssor színes kulcsszava („Go to your car”) és gombikonja („Hold [gomb] to …”) nincs a fehér betűmagban:
 # a sor teljes szövegét az ennél nem nagyobb réseken át mérjük (az ikon ~45 képpont), és a kép közepére tükrözzük
 OBJECTIVE_MAX_GAP = 60.0
@@ -67,8 +69,9 @@ def _objective_rows(band: np.ndarray, area: Box, frame_size: tuple[int, int], pa
         return []  # a sáv nem ér le a küldetéssorig
     strip = np.ascontiguousarray(band[top:])
     detection = detect(strip, area.left, frame_width,
-                       replace(params, whole_band=False, max_run=OBJECTIVE_MAX_RUN,
-                               min_stroke_density=OBJECTIVE_MIN_STROKE_DENSITY, accept_offset=OBJECTIVE_WHITE_OFFSET))
+                       replace(params, whole_band=False, max_run=OBJECTIVE_MAX_RUN, max_fill=OBJECTIVE_MAX_FILL,
+                               min_stroke_density=OBJECTIVE_MIN_STROKE_DENSITY, accept_offset=OBJECTIVE_WHITE_OFFSET,
+                               trims_off_centre=False))
     center_x = frame_width / 2 - area.left
     wholes = (_centred_whole(strip, row, area.left, frame_width, center_x, params)
               for row in detection.rows if (row.top + row.bottom) / 2 + top > dialogue_bottom)
