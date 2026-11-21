@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from .config import AppConfig
 from .frosted_cover import SIDE_FEATHER_RATIO, cover_area
 from .ocr import Box
-from .overlay import (MAX_TEXT_WIDTH_RATIO, RenderedSubtitle, beside_original_position, centered_position,
+from .overlay import (LINE_SPACING_RATIO, PANEL_PADDING_RATIO, RenderedSubtitle, beside_original_position, centered_position,
                       hex_to_rgb, render_subtitle, subtitle_position)
 
 MIN_FONT_PX = 12
@@ -23,6 +23,8 @@ MULTI_ROW_HEIGHT_RATIO = 0.055  # ennél magasabb angol sor (a képmagassághoz 
 MAX_OPACITY = 255.0
 MIN_COVER_FEATHER_PX = 8  # a takarás lágy szélének szélessége legalább ennyi
 COVER_PADDING_PX = 4  # a lágy szél a betűkön kívül kezdődjön
+PREVIEW_ROWS = 3  # a Minta módban ennyi sor magas a panel: így látszik és fogható meg a teljes területe
+CLICKABLE_ALPHA = 1  # az átlátszó rétegen a teljesen átlátszó képpontra kattintás átmegy a játékra
 
 
 @dataclass(frozen=True)
@@ -104,7 +106,8 @@ def make_plan(config: AppConfig, view: LayerView, shown: Shown | None) -> LayerP
     if not shown.text:
         return LayerPlan(covers, strength, last_cover=last_cover)  # csak takarás: a fordítás még úton van
     panel, texts, rect = _text_jobs(config, view, shown)
-    outline = Box(rect[0], rect[1], rect[0] + rect[2], rect[1] + rect[3]) if view.is_dragging else None
+    is_framed = view.is_dragging or view.is_preview  # a Minta módban is látszik, meddig ér a panel
+    outline = Box(rect[0], rect[1], rect[0] + rect[2], rect[1] + rect[3]) if is_framed else None
     return LayerPlan(covers, strength, panel, texts, rect, last_cover, outline)
 
 
@@ -142,6 +145,9 @@ def _cover_job(view: LayerView, anchor: Box, line_feather: int | None) -> CoverJ
 def _text_jobs(config: AppConfig, view: LayerView,
                shown: Shown) -> tuple[BoxJob | None, tuple[TextJob, ...], tuple[int, int, int, int]]:
     font_size = max(MIN_FONT_PX, int(view.height * config.font_size_ratio))
+    if view.is_preview:
+        rendered, (x, y) = _preview_text(config, view, shown, font_size)
+        return None, (TextJob(rendered, x, y),), (x, y, rendered.width, rendered.height)
     if view.custom_center is None and view.hide_original and shown.lines:
         return _line_by_line_jobs(config, view, shown, font_size)
     rendered, (x, y) = _block_text(config, view, shown, font_size)
@@ -155,8 +161,10 @@ def _line_by_line_jobs(config: AppConfig, view: LayerView, shown: Shown,
     for line in shown.lines:
         # Ha az angol mondat két képernyősorban állt, a fordítás is törhet: nem fut ki a kép szélére
         is_multi_row = line.anchor.height > view.height * MULTI_ROW_HEIGHT_RATIO
-        max_width = MAX_TEXT_WIDTH_RATIO if is_multi_row else LINE_MAX_WIDTH_RATIO
-        rendered = render_subtitle(line.text, config.font_path, font_size, int(view.width * max_width), (0, 0), 0,
+        max_width = (config.panel_width_ratio if is_multi_row
+                     else max(LINE_MAX_WIDTH_RATIO, config.panel_width_ratio))
+        rendered = render_subtitle(line.text, config.font_path, font_size,
+                                   _wrap_width(int(view.width * max_width), font_size), (0, 0), 0,
                                    hex_to_rgb(config.speaker_color))
         texts.append(TextJob(rendered, *subtitle_position(rendered, line.anchor, view.width, view.height)))
     # A szegély miatt a szomszéd sorok kirajzolása kicsit fedheti egymást; ennél többet nem
@@ -196,7 +204,7 @@ def _block_text(config: AppConfig, view: LayerView, shown: Shown,
                 font_size: int) -> tuple[RenderedSubtitle, tuple[int, int]]:
     """A teljes szöveg egy panelben: a felhasználó által választott helyen, vagy az angol feliratnál."""
     speaker = hex_to_rgb(config.speaker_color)
-    max_width = int(view.width * MAX_TEXT_WIDTH_RATIO)
+    max_width = _wrap_width(int(view.width * config.panel_width_ratio), font_size)
     if view.custom_center is not None:
         rendered = render_subtitle(shown.text, config.font_path, font_size, max_width, (0, 0),
                                    config.panel_opacity, speaker)
@@ -208,3 +216,23 @@ def _block_text(config: AppConfig, view: LayerView, shown: Shown,
     if view.hide_original:
         return rendered, subtitle_position(rendered, anchor, view.width, view.height)
     return rendered, beside_original_position(rendered, anchor, view.width, view.height, gap=font_size // 2)
+
+
+def _preview_text(config: AppConfig, view: LayerView, shown: Shown,
+                  font_size: int) -> tuple[RenderedSubtitle, tuple[int, int]]:
+    """A Minta mód panelje a beállított teljes szélességben és néhány sor magasan, hogy látszódjon, meddig ér
+    a fordítás, és bárhol megfogható legyen (átlátszó panelnél is: alig látható, de kattintható alappal)."""
+    width = int(view.width * config.panel_width_ratio)
+    height = int(font_size * (1 + LINE_SPACING_RATIO)) * PREVIEW_ROWS
+    rendered = render_subtitle(shown.text, config.font_path, font_size, _wrap_width(width, font_size), (width, height),
+                               max(config.panel_opacity, CLICKABLE_ALPHA), hex_to_rgb(config.speaker_color))
+    if view.custom_center is not None:
+        return rendered, centered_position(rendered, *view.custom_center, view.width, view.height)
+    # A sáv mellé, nem a közepére: így a sáv belseje is megfogható, és az OCR is látja a sávot
+    return rendered, beside_original_position(rendered, shown.anchor, view.width, view.height,
+                                              gap=font_size // 2)
+
+
+def _wrap_width(panel_width: int, font_size: int) -> int:
+    """Ilyen szélesen törhet a szöveg, hogy a belső margóval együtt se legyen szélesebb a panelnél."""
+    return max(panel_width - 2 * int(font_size * PANEL_PADDING_RATIO), font_size)

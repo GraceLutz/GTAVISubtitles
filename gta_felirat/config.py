@@ -2,7 +2,7 @@
 
 import json
 import re
-from dataclasses import dataclass, field, fields, replace
+from dataclasses import asdict, dataclass, field, fields, is_dataclass, replace
 from pathlib import Path
 
 from .i18n import AUTO, UI_LANGUAGES, t
@@ -14,6 +14,8 @@ DEFAULT_CLAUDE_MODEL = "claude-haiku-5-5"
 DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
 MIN_FONT_SIZE_RATIO = 0.015
 MAX_FONT_SIZE_RATIO = 0.08
+MIN_PANEL_WIDTH_RATIO = 0.3  # ennél keskenyebb panelben a magyar mondat túl sok sorba törne
+MAX_PANEL_WIDTH_RATIO = 1.0
 # Vékony (a GTA-feliratokhoz hasonló) és félkövér betű; a panelen váltható
 THIN_FONT_PATH = "C:/Windows/Fonts/segoeui.ttf"
 BOLD_FONT_PATH = "C:/Windows/Fonts/segoeuib.ttf"
@@ -33,9 +35,9 @@ class ConfigError(ValueError):
 class Region:
     """Képrészlet a teljes kép arányában (0.0–1.0)."""
 
-    left: float = 0.12
+    left: float = 0.06  # széles sáv: a hosszú feliratsor széle se lógjon ki belőle
     top: float = 0.70  # két-három soros felirat is beférjen (a játék a hosszú szöveget felfelé tolja)
-    right: float = 0.88
+    right: float = 0.94
     bottom: float = 0.98
 
     def validate(self) -> None:
@@ -75,6 +77,8 @@ class AppConfig:
     # terhelés); a folyamatos rögzítésre épül. false: mindig a teljes sávot olvassuk
     row_reading: bool = True
     panel_opacity: int = 245
+    # A fordítás legfeljebb ilyen széles (a kép szélességéhez mérve); a Minta módban a panel szélénél húzva állítható
+    panel_width_ratio: float = 0.9
     subtitle_x: float | None = None  # None: az eredeti felirat helyén
     subtitle_y: float | None = None
     font_path: str = DEFAULT_FONT_PATH
@@ -116,6 +120,9 @@ class AppConfig:
             raise ConfigError(t("config.font_size_range", minimum=MIN_FONT_SIZE_RATIO, maximum=MAX_FONT_SIZE_RATIO))
         if not 0 <= self.panel_opacity <= 255:
             raise ConfigError(t("config.opacity_range"))
+        if not MIN_PANEL_WIDTH_RATIO <= self.panel_width_ratio <= MAX_PANEL_WIDTH_RATIO:
+            raise ConfigError(t("config.panel_width_range", minimum=MIN_PANEL_WIDTH_RATIO,
+                                maximum=MAX_PANEL_WIDTH_RATIO))
         if not isinstance(self.speaker_color, str) or not HEX_COLOR_PATTERN.match(self.speaker_color):
             raise ConfigError(t("config.speaker_color_format"))
         if (self.subtitle_x is None) != (self.subtitle_y is None):
@@ -189,8 +196,15 @@ def save_settings(path: Path, updates: dict) -> None:
             raw = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as err:
             raise ConfigError(t("config.invalid_json_not_saved", path=path, err=err)) from err
-    rounded = {k: round(v, 4) if isinstance(v, float) else v for k, v in updates.items()}
+    rounded = {k: _saved_value(v) for k, v in updates.items()}
     temp_path = path.with_suffix(".tmp")
     content = json.dumps({**raw, **rounded}, indent=2, ensure_ascii=False) + "\n"
     temp_path.write_text(content, encoding="utf-8")
     temp_path.replace(path)
+
+
+def _saved_value(value):
+    """JSON-ba írható alak: a tört négy tizedesre kerekítve, a sáv (Region) objektumként."""
+    if is_dataclass(value):
+        return {key: _saved_value(item) for key, item in asdict(value).items()}
+    return round(value, 4) if isinstance(value, float) else value

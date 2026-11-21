@@ -278,6 +278,10 @@ class SubtitleReader:
         self._region = region
         self._min_score = min_score
 
+    def set_region(self, region: Region) -> None:
+        """Új figyelt sáv; a munkaszálak a következő olvasástól ezt használják (egyetlen értékadás, szálbiztos)."""
+        self._region = region
+
     def read(self, frame: np.ndarray) -> OcrResult:
         height, width = frame.shape[:2]
         area = region_to_box(self._region, width, height)

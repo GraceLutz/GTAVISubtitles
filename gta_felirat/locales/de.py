@@ -34,9 +34,7 @@ MESSAGES: dict[str, str] = {
     "translator.auto": "Automatisch",
     "translator.google": "Google (kostenlos)",
     # Subtitle panel
-    "layer.preview_text": ("Untertitel-Panel – mit der Maus ziehen, mit dem Mausrad skalieren, "
-                           "Rechtsklick: Ausgangsposition"),
-    # Command line and console
+    "layer.preview_text": "Untertitel-Panel – mit der Maus ziehen, am Rand verbreitern, Mausrad: Schriftgröße, Rechtsklick: Ausgangsposition",
     "cli.description": "Übersetztes Untertitel-Panel für Capture-Karte oder PS Remote Play",
     "cli.help_config": "Einstellungsdatei (config.json)",
     "cli.help_device": "Nummer der Capture-Karte (siehe --list-devices)",
@@ -81,6 +79,8 @@ MESSAGES: dict[str, str] = {
     "config.target_lang_empty": "target_lang darf nicht leer sein",
     "config.font_size_range": "font_size_ratio muss zwischen {minimum} und {maximum} liegen",
     "config.opacity_range": "panel_opacity muss zwischen 0 und 255 liegen",
+    "config.panel_width_range": "panel_width_ratio muss zwischen {minimum} und {maximum} liegen",
+    "layer.region_hint": "Den überwachten Bereich (Rahmen) innen anfassen zum Verschieben, an Rand oder Ecke zum Skalieren.",
     "config.speaker_color_format": "speaker_color muss eine \"#RRGGBB\"-Farbe sein, z. B. \"#7ECFD6\"",
     "config.subtitle_xy_pair": "subtitle_x und subtitle_y müssen beide null oder beide Zahlen sein",
     "config.subtitle_xy_range": "subtitle_x und subtitle_y müssen zwischen 0.0 und 1.0 liegen",

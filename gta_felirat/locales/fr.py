@@ -33,9 +33,7 @@ MESSAGES: dict[str, str] = {
     "translator.auto": "Automatique",
     "translator.google": "Google (gratuit)",
     # Subtitle panel
-    "layer.preview_text": ("Panneau de sous-titres – déplace-le à la souris, redimensionne avec la molette, "
-                           "clic droit : position d'origine"),
-    # Command line and console
+    "layer.preview_text": "Panneau de sous-titres – déplace-le à la souris, élargis-le par le bord, molette : taille du texte, clic droit : position d'origine",
     "cli.description": "Panneau de sous-titres traduits pour carte d'acquisition ou PS Remote Play",
     "cli.help_config": "fichier de réglages (config.json)",
     "cli.help_device": "numéro de la carte d'acquisition (voir --list-devices)",
@@ -81,6 +79,8 @@ MESSAGES: dict[str, str] = {
     "config.target_lang_empty": "target_lang ne peut pas être vide",
     "config.font_size_range": "font_size_ratio doit être compris entre {minimum} et {maximum}",
     "config.opacity_range": "panel_opacity doit être compris entre 0 et 255",
+    "config.panel_width_range": "panel_width_ratio doit être compris entre {minimum} et {maximum}",
+    "layer.region_hint": "Fais glisser l'intérieur de la zone surveillée (cadre) pour la déplacer, ses bords ou coins pour la redimensionner.",
     "config.speaker_color_format": "speaker_color doit être une couleur \"#RRGGBB\", p. ex. \"#7ECFD6\"",
     "config.subtitle_xy_pair": "subtitle_x et subtitle_y doivent être tous deux null ou tous deux des nombres",
     "config.subtitle_xy_range": "subtitle_x et subtitle_y doivent être compris entre 0.0 et 1.0",

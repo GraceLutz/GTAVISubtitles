@@ -5,8 +5,9 @@ import numpy as np
 import pytest
 
 from gta_felirat import i18n
-from gta_felirat.config import AppConfig
+from gta_felirat.config import AppConfig, Region
 from gta_felirat.overlay_window import OverlayWindow
+from gta_felirat.region_editor import RegionEditor
 from gta_felirat.settings_window import SettingsCallbacks, SettingsWindow
 from gta_felirat.subtitle_layer import SubtitleLayer
 from gta_felirat.window_capture import ScreenRect
@@ -60,7 +61,8 @@ def test_language_switch_keeps_other_windows_under_the_root_alive(window):
 def test_keeping_the_overlay_on_top_does_not_raise_it_through_tk(window, monkeypatch):
     # Valós hiba: a Tk lift() előtérbe hozta a réteget, és másodpercenként elvette a billentyűzetet
     # a beállítóablaktól, így nem lehetett a mezőibe írni
-    overlay = OverlayWindow(window.root, SubtitleLayer(AppConfig(), on_change=lambda updates: None))
+    overlay = OverlayWindow(window.root, SubtitleLayer(AppConfig(), on_change=lambda updates: None),
+                            RegionEditor(Region(), on_change=lambda updates: None))
     overlay.place(ScreenRect(50, 50, 320, 200))
     raised = []
     monkeypatch.setattr(overlay._window, "lift", lambda *args: raised.append("lift"))
@@ -79,7 +81,8 @@ def test_overlay_draws_in_place_and_clears_when_nothing_is_shown(window):
     from gta_felirat.ocr import Box
 
     config = AppConfig(hide_original=True, panel_opacity=0, font_size_ratio=0.05)
-    overlay = OverlayWindow(window.root, SubtitleLayer(config, on_change=lambda updates: None))
+    overlay = OverlayWindow(window.root, SubtitleLayer(config, on_change=lambda updates: None),
+                            RegionEditor(Region(), on_change=lambda updates: None))
     overlay.place(ScreenRect(40, 40, 640, 360))
     line = Box(200, 250, 440, 280)
     band = Backdrop(np.full((120, 640, 3), 30, np.uint8), Box(0, 220, 640, 340))

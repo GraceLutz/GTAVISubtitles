@@ -27,7 +27,7 @@ from .frosted_cover import Backdrop
 from .handoff import tk_scheduler
 from .i18n import t
 from .layer_plan import Shown
-from .ocr import Box, SubtitleReader, region_to_box
+from .ocr import Box, SubtitleReader
 from .overlay_window import OverlayWindow
 from .row_path import RowPath, WakingRowPipeline
 from .translator import CachedTranslator
@@ -78,7 +78,8 @@ class RemotePlayApp(SubtitleAppBase):
         self._running = True
         self._band_covered = False
         self._settings = self._create_settings_window(on_preview=self._set_preview, on_close=self.stop)
-        self._overlay = OverlayWindow(self._settings.root, self._subtitles, config.visible_in_recordings)
+        self._overlay = OverlayWindow(self._settings.root, self._subtitles, self._region_editor,
+                                      config.visible_in_recordings)
         self._row_path = RowPath(self._pipeline, reader.read_rows, config.min_text_score,
                                  tk_scheduler(self._settings.root, self._on_wake))
 
@@ -115,6 +116,7 @@ class RemotePlayApp(SubtitleAppBase):
 
     def _set_preview(self, enabled: bool) -> None:
         self._preview = enabled
+        self._region_editor.enabled = enabled  # a sáv csak akkor húzható, amikor látszik
         self._overlay.needs_redraw = True
 
     def _on_config_changed(self) -> None:
@@ -206,7 +208,7 @@ class RemotePlayApp(SubtitleAppBase):
         if shown != self._drawn_shown:
             self._overlay.needs_redraw = True  # más látszik vagy más van takarva (pl. egy új sor azonnali takarása)
         if self._overlay.needs_redraw:
-            preview = region_to_box(self._config.subtitle_region, rect.width, rect.height) if self._preview else None
+            preview = self._region_editor.box(rect.width, rect.height) if self._preview else None
             self._overlay.render(shown, hide_original, preview, backdrop)
             self._drawn_backdrop, self._drawn_shown = backdrop, shown
 
@@ -288,7 +290,9 @@ class RemotePlayApp(SubtitleAppBase):
 
     def _own_text_box(self) -> Box | None:
         """Ahol most a fordításunk látszik, ha a réteg a képrögzítésben is látszik (különben nem kell takarni)."""
-        if not self._config.visible_in_recordings or self._subtitles.last_rect is None:
+        # A mintapanel nem fordítás: ha a sávra esik, se takarja ki az angol feliratot az olvasás elől
+        if (not self._config.visible_in_recordings or self._subtitles.last_rect is None
+                or self._subtitles.is_preview):
             return None
         x, y, width, height = self._subtitles.last_rect
         return Box(x, y, x + width, y + height)

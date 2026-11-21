@@ -9,6 +9,7 @@ from .config import AppConfig, ConfigError, save_settings
 from .i18n import set_language, t
 from .key_vault import KeyVault, KeyVaultError, WindowsCredentialVault
 from .ocr import SubtitleReader
+from .region_editor import RegionEditor
 from .subtitle_layer import SubtitleLayer
 from .subtitle_pipeline import SubtitlePipeline
 from .translation_service import TRANSLATOR_FIELDS, TranslationService, choice_from
@@ -30,6 +31,8 @@ class SubtitleAppBase:
                                                vault=_open_key_vault() if config_path else None)
         self._pipeline = self._create_pipeline(config, reader)
         self._subtitles = SubtitleLayer(config, on_change=self.apply_updates)
+        # A figyelt sáv egérrel (csak beállításkor, amikor a sáv látszik)
+        self._region_editor = RegionEditor(config.subtitle_region, on_change=self.apply_updates)
         self._settings = None
 
     def _create_pipeline(self, config: AppConfig, reader: SubtitleReader) -> SubtitlePipeline:
@@ -48,6 +51,7 @@ class SubtitleAppBase:
         if "ui_language" in updates:
             set_language(new_config.ui_language)  # a beállítóablak a sync()-ben újraépül
         self._subtitles.update_config(new_config)
+        self._region_editor.update_region(new_config.subtitle_region)
         self._pipeline.update_config(new_config)
         if TRANSLATOR_FIELDS & set(updates):
             self._translation.rebuild(choice_from(new_config))

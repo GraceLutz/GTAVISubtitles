@@ -15,7 +15,6 @@ from PIL import Image, ImageDraw, ImageFont
 from .compositing import paste
 from .ocr import Box
 
-MAX_TEXT_WIDTH_RATIO = 0.8  # a fordítás legfeljebb a kép ennyi részén fusson (a magyar hosszabb az angolnál)
 PANEL_PADDING_RATIO = 0.6
 PANEL_ALPHA = 245
 LINE_SPACING_RATIO = 0.25

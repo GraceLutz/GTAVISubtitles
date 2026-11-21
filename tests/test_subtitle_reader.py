@@ -6,7 +6,7 @@ from gta_felirat.ocr import Box, SubtitleReader, region_to_box
 WIDTH, HEIGHT = 1920, 1080
 AREA = region_to_box(Region(), WIDTH, HEIGHT)
 LINE = Box(780, 957, 1140, 994)
-MIDDLE_WIDTH = 1076  # a kereső a kép szélességének középső 56%-át kapja (kerekítve)
+MIDDLE_WIDTH = 1074  # a kereső a kép szélességének középső 56%-át kapja (kerekítve)
 
 
 def band_with(*boxes, level=255):
@@ -56,7 +56,7 @@ def test_reads_a_centred_white_line_from_the_middle_part_only():
 
     assert result.text == "How about you, how you doin'?"
     assert result.lines[0].box == LINE
-    assert engine.detected_widths == [MIDDLE_WIDTH]  # a kép középső 56%-a, nem a teljes 1459 px-es sáv
+    assert engine.detected_widths == [MIDDLE_WIDTH]  # a kép középső 56%-a, nem a teljes sáv
 
 
 def test_dark_band_is_not_searched_at_all():

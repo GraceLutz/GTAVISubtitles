@@ -22,6 +22,7 @@ from .layer_compositor import LayerCompositor
 from .layer_plan import Shown
 from .layered_surface import LayeredSurface
 from .ocr import Box
+from .region_editor import RegionEditor, edge_cursor, route_mouse
 from .subtitle_layer import SubtitleLayer
 from .window_capture import ScreenRect
 
@@ -40,8 +41,11 @@ logger = logging.getLogger(__name__)
 
 
 class OverlayWindow:
-    def __init__(self, root: tk.Tk, layer: SubtitleLayer, capture_visible: bool = True) -> None:
+    def __init__(self, root: tk.Tk, layer: SubtitleLayer, region_editor: RegionEditor,
+                 capture_visible: bool = True) -> None:
         self._layer = layer
+        self._region_editor = region_editor
+        self._cursor = ""
         self._capture_visible = capture_visible
         self._rect: ScreenRect | None = None
         self._surface: LayeredSurface | None = None
@@ -163,10 +167,18 @@ class OverlayWindow:
             self._canvas.bind(sequence, lambda e, ev=cv_event: self._forward(ev, e.x, e.y, 0))
         self._canvas.bind("<MouseWheel>", lambda e: self._forward(
             cv2.EVENT_MOUSEWHEEL, e.x, e.y, e.delta << WHEEL_SHIFT))
+        self._canvas.bind("<Motion>", lambda e: self._show_cursor(e.x, e.y))
 
     def _forward(self, cv_event: int, x: int, y: int, flags: int) -> None:
-        if self._layer.handle_mouse(cv_event, x, y, flags):
+        if route_mouse(self._region_editor, self._layer, cv_event, x, y, flags):
             self.needs_redraw = True
+
+    def _show_cursor(self, x: int, y: int) -> None:
+        """A kurzor mutatja, mit fogsz meg: a panelt vagy a sávot, és mozgatod vagy méretezed."""
+        cursor = edge_cursor(self._region_editor, self._layer, x, y)
+        if cursor != self._cursor:
+            self._cursor = cursor
+            self._canvas.configure(cursor=cursor)
 
     def destroy(self) -> None:
         if self._surface is not None:

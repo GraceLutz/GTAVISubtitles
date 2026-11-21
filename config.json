@@ -4,9 +4,9 @@
   "capture_height": 1080,
   "capture_fps": 60,
   "subtitle_region": {
-    "left": 0.12,
+    "left": 0.06,
     "top": 0.7,
-    "right": 0.88,
+    "right": 0.94,
     "bottom": 0.98
   },
   "ocr_interval_seconds": 0.1,

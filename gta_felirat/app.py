@@ -16,12 +16,13 @@ from .facecam import FacecamStyle, place_facecam
 from .facecam_drag import FacecamDragger
 from .frosted_cover import Backdrop
 from .i18n import t
-from .ocr import Box, SubtitleReader, region_to_box
+from .layer_compositor import draw_outline
+from .ocr import Box, SubtitleReader
+from .region_editor import route_mouse
 from .translator import CachedTranslator
 
 WINDOW_NAME = "GTA felirat"
 KEY_ESC = 27
-REGION_COLOR = (0, 200, 255)
 IDLE_WAIT_MS = 10
 
 logger = logging.getLogger(__name__)
@@ -90,15 +91,14 @@ class OverlayApp(SubtitleAppBase):
         height, width = frame.shape[:2]
         output = frame
         if self._view.overlay_enabled:
-            preview = region_to_box(self._config.subtitle_region, width, height) if self._view.show_region else None
+            preview = self._region_editor.box(width, height) if self._view.show_region else None
             # A képkocka maga a takarás nélküli játékkép: ebből lesz az angol szöveg elmosott takarása
             backdrop = Backdrop(frame, Box(0, 0, width, height))
             output = self._subtitles.draw(frame, self._pipeline.shown, self._config.hide_original, preview,
                                           backdrop)
         if self._view.show_region:
-            area = region_to_box(self._config.subtitle_region, width, height)
-            output = output.copy()
-            cv2.rectangle(output, (area.left, area.top), (area.right, area.bottom), REGION_COLOR, 2)
+            output = output.copy() if output is frame else output
+            draw_outline(output, self._region_editor.box(width, height))
         return self._draw_webcam(output)
 
     def _draw_webcam(self, frame: np.ndarray) -> np.ndarray:
@@ -122,9 +122,9 @@ class OverlayApp(SubtitleAppBase):
     # --- egér és billentyűzet ---------------------------------------------
     def _on_mouse(self, event: int, x: int, y: int, flags: int, _param) -> None:
         # A feliratpanel kapja először az egeret, kivéve ha épp a webkamerás képet húzzuk
-        if not self._facecam.is_dragging and self._view.overlay_enabled:
-            if self._subtitles.handle_mouse(event, x, y, flags):
-                return
+        panel = self._subtitles if not self._facecam.is_dragging and self._view.overlay_enabled else None
+        if route_mouse(self._region_editor, panel, event, x, y, flags):
+            return
         if self._webcam is not None and self._view.webcam_enabled:
             self._facecam.handle_mouse(event, x, y, flags)
 
@@ -148,6 +148,7 @@ class OverlayApp(SubtitleAppBase):
             self.apply_updates({"hide_original": not self._config.hide_original})
         elif key == ord("r"):
             self._view = replace(self._view, show_region=not self._view.show_region)
+            self._region_editor.enabled = self._view.show_region  # a sáv csak akkor húzható, amikor látszik
         elif key == ord("o"):
             self._view = replace(self._view, overlay_enabled=not self._view.overlay_enabled)
         elif key == ord("c"):

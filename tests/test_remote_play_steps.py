@@ -78,7 +78,7 @@ class FakeFeed:
 
 
 class FakeOverlay:
-    def __init__(self, root, layer, visible_in_recordings):
+    def __init__(self, root, layer, region_editor, visible_in_recordings):
         self.needs_redraw = True
         self.hwnd = 2
         self.renders = []

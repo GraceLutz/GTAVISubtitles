@@ -33,9 +33,7 @@ MESSAGES: dict[str, str] = {
     "translator.auto": "Automático",
     "translator.google": "Google (grátis)",
     # Subtitle panel
-    "layer.preview_text": ("Painel de legendas – arraste com o mouse, redimensione com a roda, "
-                           "botão direito: posição original"),
-    # Command line and console
+    "layer.preview_text": "Painel de legendas – arraste com o mouse, alargue pela borda, roda: tamanho da letra, clique direito: posição original",
     "cli.description": "Painel de legendas traduzidas para placa de captura ou PS Remote Play",
     "cli.help_config": "arquivo de configurações (config.json)",
     "cli.help_device": "número da placa de captura (veja --list-devices)",
@@ -79,6 +77,8 @@ MESSAGES: dict[str, str] = {
     "config.target_lang_empty": "target_lang não pode ficar vazio",
     "config.font_size_range": "font_size_ratio deve estar entre {minimum} e {maximum}",
     "config.opacity_range": "panel_opacity deve estar entre 0 e 255",
+    "config.panel_width_range": "panel_width_ratio deve estar entre {minimum} e {maximum}",
+    "layer.region_hint": "Arraste o interior da área monitorada (moldura) para movê-la, e as bordas ou cantos para redimensioná-la.",
     "config.speaker_color_format": "speaker_color deve ser uma cor \"#RRGGBB\", ex.: \"#7ECFD6\"",
     "config.subtitle_xy_pair": "subtitle_x e subtitle_y devem ser ambos null ou ambos números",
     "config.subtitle_xy_range": "subtitle_x e subtitle_y devem estar entre 0.0 e 1.0",

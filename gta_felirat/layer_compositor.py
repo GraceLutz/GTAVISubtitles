@@ -22,6 +22,8 @@ from .overlay import PANEL_COLOR, RenderedSubtitle
 UINT8_SCALE = 1.0 / 255.0
 OUTLINE_COLOR = (0, 200, 255, 255)  # BGRA: a húzott panel és a figyelt sáv kerete
 OUTLINE_PX = 2
+# A figyelt sáv belseje ennyire fedett: szemmel nem látszik, de az átlátszó rétegen így kattintható (húzható)
+CLICKABLE_ALPHA = 1
 MAX_TEXT_PATCHES = 64
 
 
@@ -76,14 +78,23 @@ def cover_patch(source: np.ndarray, feather: int, strength: float) -> Patch | No
 
 
 def draw_outline(target: np.ndarray, box: Box) -> None:
-    """Keret a doboz belső szélén (a célra vágva)."""
+    """Keret a doboz belső szélén (a célra vágva); BGRA rétegen és BGR képkockán is."""
     area = target[max(box.top, 0):max(box.bottom, 0), max(box.left, 0):max(box.right, 0)]
     if area.size == 0:
         return
-    area[:OUTLINE_PX] = OUTLINE_COLOR
-    area[-OUTLINE_PX:] = OUTLINE_COLOR
-    area[:, :OUTLINE_PX] = OUTLINE_COLOR
-    area[:, -OUTLINE_PX:] = OUTLINE_COLOR
+    color = OUTLINE_COLOR[:target.shape[2]]
+    area[:OUTLINE_PX] = color
+    area[-OUTLINE_PX:] = color
+    area[:, :OUTLINE_PX] = color
+    area[:, -OUTLINE_PX:] = color
+
+
+def make_clickable(target: np.ndarray, box: Box) -> None:
+    """A doboz teljesen átlátszó képpontjai alig fedettek lesznek: a kattintás nem megy át rajtuk a játékra."""
+    area = target[max(box.top, 0):max(box.bottom, 0), max(box.left, 0):max(box.right, 0)]
+    if area.size:
+        alpha = area[:, :, 3]
+        alpha[alpha == 0] = CLICKABLE_ALPHA
 
 
 class LayerCompositor:
@@ -108,6 +119,7 @@ class LayerCompositor:
             target[old.top:old.bottom, old.left:old.right] = 0
         boxes = self._draw(target, plan, backdrop) if plan is not None else []
         for box in outlines:
+            make_clickable(target, box)
             draw_outline(target, box)
             boxes.append(box)
         new = clip(union(boxes), width, height) if boxes else None

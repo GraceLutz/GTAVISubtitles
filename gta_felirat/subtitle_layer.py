@@ -2,21 +2,25 @@
 
 - Bal gombbal húzva a panel oda kerül, ahová teszed (mentődik).
 - Görgővel a panel fölött nő vagy csökken a betűméret.
+- A Minta módban a panel bal vagy jobb szélét húzva a fordítás szélessége állítható (mentődik).
 - Jobb gombbal visszaugrik az eredeti angol felirat helyére.
 
 Hogy mit és hová kell rajzolni, azt a layer_plan dönti el; itt a terv lebegőpontos kirajzolása
 van (capture card képkockára), a gyors, helyben rajzoló változat a layer_compositor.
 """
 
+from dataclasses import replace
 from typing import Callable
 
 import cv2
 import numpy as np
 
 from .compositing import paste
-from .config import MAX_FONT_SIZE_RATIO, MIN_FONT_SIZE_RATIO, AppConfig
+from .config import (MAX_FONT_SIZE_RATIO, MAX_PANEL_WIDTH_RATIO, MIN_FONT_SIZE_RATIO, MIN_PANEL_WIDTH_RATIO,
+                     AppConfig)
 from .frosted_cover import Backdrop, frosted_layer
 from .i18n import t
+from .layer_compositor import draw_outline
 from .layer_plan import BoxJob, CoverJob, LayerPlan, LayerView, Shown, ShownLine, make_plan
 from .ocr import Box
 from .overlay import blend, cover_box
@@ -24,7 +28,10 @@ from .overlay import blend, cover_box
 __all__ = ["Shown", "ShownLine", "SubtitleLayer", "draw_plan", "wheel_delta"]
 
 FONT_STEP = 0.002
-DRAG_OUTLINE_COLOR = (0, 200, 255, 255)  # BGR(A): az átlátszó rétegen is látszódjon
+EDGE_GRAB_PX = 12  # a panel szélétől ennyire még a szélét fogod meg (szélesítés), beljebb az egészet
+WIDTH_DECIMALS = 4
+MOVE_CURSOR = "fleur"
+WIDEN_CURSOR = "sb_h_double_arrow"
 
 
 def wheel_delta(flags: int) -> int:
@@ -45,8 +52,7 @@ def draw_plan(frame: np.ndarray, plan: LayerPlan, backdrop: Backdrop | None) -> 
     outline = plan.outline
     if outline is not None:
         output = output.copy() if output is frame else output
-        cv2.rectangle(output, (outline.left, outline.top), (outline.right - 1, outline.bottom - 1),
-                      DRAG_OUTLINE_COLOR, 2)
+        draw_outline(output, outline)
     return output
 
 
@@ -74,6 +80,10 @@ class SubtitleLayer:
         self._frame_size = (0, 0)
         self._grab_offset: tuple[int, int] | None = None
         self._drag_center: tuple[int, int] | None = None
+        self._drag_start: tuple[int, int] | None = None  # a panel közepe a megfogáskor
+        self._widen_center_x: int | None = None  # a panel közepe, amíg a szélét húzzuk
+        self._drag_width_ratio: float | None = None  # a húzott szélesség, elengedésig
+        self._is_preview = False
 
     def update_config(self, config: AppConfig) -> None:
         self._config = config
@@ -89,8 +99,13 @@ class SubtitleLayer:
         return self._last_cover
 
     @property
+    def is_preview(self) -> bool:
+        """A legutóbbi rajzolás a mintapanel volt (nem valódi fordítás)."""
+        return self._is_preview
+
+    @property
     def is_dragging(self) -> bool:
-        return self._grab_offset is not None
+        return self._grab_offset is not None or self._widen_center_x is not None
 
     def plan(self, frame_size: tuple[int, int], shown: Shown | None, hide_original: bool,
              preview_anchor: Box | None = None, backdrop: Backdrop | None = None) -> LayerPlan | None:
@@ -102,11 +117,15 @@ class SubtitleLayer:
         width, height = frame_size
         self._frame_size = frame_size
         is_preview = shown is None and preview_anchor is not None
+        self._is_preview = is_preview
         if is_preview:
             shown = Shown(t("layer.preview_text"), preview_anchor)
         view = LayerView(width, height, hide_original, backdrop.area if backdrop is not None else None,
                          self._custom_center(width, height), self.is_dragging, is_preview)
-        plan = make_plan(self._config, view, shown)
+        config = self._config
+        if self._drag_width_ratio is not None:
+            config = replace(config, panel_width_ratio=self._drag_width_ratio)
+        plan = make_plan(config, view, shown)
         self._last_rect = plan.last_rect if plan is not None else None
         self._last_cover = plan.last_cover if plan is not None else None
         return plan
@@ -124,21 +143,34 @@ class SubtitleLayer:
             return None
         return int(self._config.subtitle_x * width), int(self._config.subtitle_y * height)
 
+    def cursor_at(self, x: int, y: int) -> str:
+        """Tk-kurzor neve az egér helyén ("": nem a panel fölött)."""
+        if not self._contains(x, y, EDGE_GRAB_PX if self._is_preview else 0):
+            return ""
+        return WIDEN_CURSOR if self._is_at_side(x) else MOVE_CURSOR
+
     def handle_mouse(self, event: int, x: int, y: int, flags: int) -> bool:
         """True, ha az esemény a feliratpanelé volt."""
+        if self._widen_center_x is not None:
+            return self._handle_widening(event, x)
         if event == cv2.EVENT_MOUSEMOVE and self._grab_offset is not None:
             self._drag_center = (x - self._grab_offset[0], y - self._grab_offset[1])
             return True
         if event == cv2.EVENT_LBUTTONUP and self._grab_offset is not None:
             self._finish_drag()
             return True
-        if not self._contains(x, y):
+        if not self._contains(x, y, EDGE_GRAB_PX if self._is_preview else 0):
             return False
-        if event == cv2.EVENT_LBUTTONDOWN:
+        if event == cv2.EVENT_LBUTTONDOWN and self._is_at_side(x):
+            left, _top, width, _height = self._last_rect
+            self._widen_center_x = left + width // 2
+            self._drag_width_ratio = self._config.panel_width_ratio
+        elif event == cv2.EVENT_LBUTTONDOWN:
             left, top, width, height = self._last_rect
             center = (left + width // 2, top + height // 2)
             self._grab_offset = (x - center[0], y - center[1])
             self._drag_center = center
+            self._drag_start = center
         elif event == cv2.EVENT_MOUSEWHEEL:
             step = FONT_STEP if wheel_delta(flags) > 0 else -FONT_STEP
             ratio = min(max(self._config.font_size_ratio + step, MIN_FONT_SIZE_RATIO), MAX_FONT_SIZE_RATIO)
@@ -152,13 +184,37 @@ class SubtitleLayer:
     def _finish_drag(self) -> None:
         width, height = self._frame_size
         center_x, center_y = self._drag_center
+        has_moved = self._drag_center != self._drag_start
         self._grab_offset = None
         self._drag_center = None
+        self._drag_start = None
+        if not has_moved:  # egy kattintás még nem rögzíti a panelt a mostani helyén
+            return
         self._on_change({"subtitle_x": min(max(center_x / width, 0.0), 1.0),
                          "subtitle_y": min(max(center_y / height, 0.0), 1.0)})
 
-    def _contains(self, x: int, y: int) -> bool:
+    def _handle_widening(self, event: int, x: int) -> bool:
+        """A panel szélének húzása: a közepe marad, a szélessége követi az egeret."""
+        frame_width = self._frame_size[0]
+        if event == cv2.EVENT_MOUSEMOVE and frame_width > 0:
+            ratio = 2 * abs(x - self._widen_center_x) / frame_width
+            self._drag_width_ratio = round(min(max(ratio, MIN_PANEL_WIDTH_RATIO), MAX_PANEL_WIDTH_RATIO),
+                                           WIDTH_DECIMALS)
+        elif event == cv2.EVENT_LBUTTONUP:
+            ratio, self._widen_center_x, self._drag_width_ratio = self._drag_width_ratio, None, None
+            if ratio is not None and ratio != self._config.panel_width_ratio:
+                self._on_change({"panel_width_ratio": ratio})
+        return True
+
+    def _is_at_side(self, x: int) -> bool:
+        """A panel bal vagy jobb szélén áll-e az egér (csak a Minta módban szélesíthető)."""
+        if not self._is_preview or self._last_rect is None:
+            return False
+        left, _top, width, _height = self._last_rect
+        return abs(x - left) <= EDGE_GRAB_PX or abs(x - (left + width)) <= EDGE_GRAB_PX
+
+    def _contains(self, x: int, y: int, margin: int = 0) -> bool:
         if self._last_rect is None:
             return False
         left, top, width, height = self._last_rect
-        return left <= x < left + width and top <= y < top + height
+        return left - margin <= x < left + width + margin and top <= y < top + height

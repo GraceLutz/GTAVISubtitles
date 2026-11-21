@@ -52,6 +52,8 @@ class SubtitlePipeline:
         self.shown: Shown | None = None
 
     def update_config(self, config: AppConfig) -> None:
+        if config.subtitle_region != self._config.subtitle_region:
+            self._reader.set_region(config.subtitle_region)  # a figyelt sávot egérrel áthelyezték
         self._config = config
 
     def ocr_due(self, now: float) -> bool:

@@ -153,7 +153,7 @@ class SettingsWindow:
         preview_hint = t("settings.preview_hint_checkbox" if self._callbacks.on_preview
                          else "settings.preview_hint_key")
         ttk.Label(frame, foreground="#777", wraplength=380,
-                  text=t("settings.panel_hint", preview_hint=preview_hint)).grid(
+                  text=t("settings.panel_hint", preview_hint=preview_hint) + " " + t("layer.region_hint")).grid(
             row=11, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
     # --- események -------------------------------------------------------
