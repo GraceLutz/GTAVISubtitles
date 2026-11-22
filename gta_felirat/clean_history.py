@@ -21,7 +21,6 @@ from .layer_plan import Shown, ShownLine
 if TYPE_CHECKING:
     import numpy as np
 
-    from .game_box import GameBox
     from .ocr import Box
 
 SETTLE_SECONDS = 0.4  # ennyi idő alatt a pipeline biztosan felismeri és megerősíti a képen megjelent feliratot
@@ -40,7 +39,6 @@ class FrameRow:
     # A sorkereső biztos benne, hogy feliratsor: akkor is takarjuk, ha egyik állapot sem fedi. A bizonytalan
     # sort (pl. rendszámtábla) csak akkor, ha valamelyik közeli állapot fordította vagy takarta
     sure: bool = True
-    game_box: GameBox | None = None  # a játék sötét feliratdoboza a sor mögött (game_box)
 
 
 @dataclass(frozen=True)

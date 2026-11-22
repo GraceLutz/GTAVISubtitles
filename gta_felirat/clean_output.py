@@ -24,7 +24,7 @@ import numpy as np
 
 from .band_capture import fits
 from .band_feed import client_box_in_frame
-from .clean_frame import FrameAnalysis, analyse, with_erased_rows, with_neat_game_boxes, without_covers_over
+from .clean_frame import FrameAnalysis, analyse, with_erased_rows, without_covers_over
 from .clean_history import HISTORY_SLACK_SECONDS, FrameBuffer, ShownHistory
 from .frosted_cover import Backdrop
 from .i18n import t
@@ -180,7 +180,6 @@ class CleanOutput:
         image, erased_rows = with_erased_rows(frame, analysis, shown)
         plan = layer.plan((width, height), shown, True, backdrop=Backdrop(image, Box(0, 0, width, height)))
         if plan is not None:
-            image = with_neat_game_boxes(image, plan, analysis, erased_rows)
             image = draw_on_frame(image, without_covers_over(plan, erased_rows))
         cv2.imshow(title, image)
 
