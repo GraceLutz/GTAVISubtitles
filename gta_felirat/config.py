@@ -82,6 +82,9 @@ class AppConfig:
     # Külön ablak a nézőknek (OBS, Medal): a játékkép késleltetve, rajta már csak a kész magyar felirat
     clean_output: bool = False
     clean_output_delay_seconds: float = 1.0
+    # A kiírt magyar felirat az exe melletti obs_felirat.txt-be is (OBS: Szöveg forrás, „Olvasás fájlból”);
+    # a tiszta kép bekapcsolásakor annak késésével
+    obs_text_file: bool = True
     # Remote Play módban a feliratsáv folyamatos rögzítése külön szálon (gyorsabb takarás és olvasás);
     # false: a régi, olvasásonkénti rögzítés, ha a folyamatos valamiért gondot okozna
     fast_capture: bool = True

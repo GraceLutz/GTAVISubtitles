@@ -28,6 +28,8 @@ from .frosted_cover import Backdrop
 from .handoff import tk_scheduler
 from .i18n import t
 from .layer_plan import Shown
+from .obs_text import FILE_NAME as OBS_TEXT_FILE_NAME
+from .obs_text import ObsTextFile, shown_text
 from .ocr import Box, SubtitleReader
 from .overlay_window import OverlayWindow
 from .row_path import RowPath, WakingRowPipeline
@@ -82,6 +84,8 @@ class RemotePlayApp(SubtitleAppBase):
         self._overlay = OverlayWindow(self._settings.root, self._subtitles, self._region_editor,
                                       config.visible_in_recordings)
         self._clean = CleanOutput(self._hwnd, config)  # a nézőknek: késleltetett kép, csak a kész fordítással
+        # A kiírt felirat szövegfájlban is, az OBS saját szövegforrásának
+        self._obs_text = ObsTextFile(config_path.parent / OBS_TEXT_FILE_NAME) if config_path else None
         self._row_path = RowPath(self._pipeline, reader.read_rows, config.min_text_score,
                                  tk_scheduler(self._settings.root, self._on_wake), whole_band=config.whole_band_text)
 
@@ -107,6 +111,8 @@ class RemotePlayApp(SubtitleAppBase):
         except KeyboardInterrupt:
             logger.info(t("remote.ctrl_c_quit"))
         finally:
+            if self._obs_text is not None:
+                self._obs_text.clear()
             self._clean.stop()
             self._feed.stop()
             self._row_path.close()
@@ -216,6 +222,7 @@ class RemotePlayApp(SubtitleAppBase):
         backdrop, shown = self._picture(now, reads_rows, hide_original)
         if self._clean.is_running:
             self._clean.history.record(now, shown, self._pipeline.current_source)
+        self._write_obs_text(shown, now)
         if shown is not None and backdrop is not self._drawn_backdrop:
             self._overlay.needs_redraw = True  # a takarás kövesse a mozgó játékképet
         if shown != self._drawn_shown:
@@ -224,6 +231,18 @@ class RemotePlayApp(SubtitleAppBase):
             preview = self._region_editor.box(rect.width, rect.height) if self._preview else None
             self._overlay.render(shown, hide_original, preview, backdrop)
             self._drawn_backdrop, self._drawn_shown = backdrop, shown
+
+    def _write_obs_text(self, shown: Shown | None, now: float) -> None:
+        """Az OBS-szövegfájl frissítése; a tiszta kép mellett annak késésével, hogy a felirat a képpel együtt jöjjön."""
+        if self._obs_text is None:
+            return
+        if not self._config.obs_text_file:
+            self._obs_text.clear()
+            return
+        if self._clean.is_running:
+            entries = self._clean.history.between(now - self._config.clean_output_delay_seconds, now)
+            shown = entries[0].shown if entries else None
+        self._obs_text.update(shown_text(shown, streamer_mode=self._config.streamer_mode))
 
     def _picture(self, now: float, reads_rows: bool, hide_original: bool) -> tuple[Backdrop | None, Shown | None]:
         """(a takarás háttere, a kiírandó állapot) az éppen használt olvasási út szerint."""

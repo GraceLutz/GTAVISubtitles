@@ -6,6 +6,8 @@ __pycache__/
 # Helyi adatok: a mentett fordítások és az ideiglenes írási fájlok
 mentett_forditasok.json
 *.tmp
+obs_felirat.txt
+obs_felirat.txt.new
 .env
 
 # PyInstaller build (build_exe.ps1)

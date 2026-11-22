@@ -152,6 +152,19 @@ látszik rajta, angol soha.
 - Kb. 200 MB-tal több memóriát használ. Alapból ki van kapcsolva; a késés a
   `clean_output_delay_seconds` beállítással változtatható (0,5–5 mp).
 
+#### A felirat szövegként az OBS-ben (nem kötelező)
+
+A program az éppen látható magyar feliratot az exe melletti **`obs_felirat.txt`** fájlba is
+beírja (soronként, a beszélő nevével; ha nincs felirat, üres). Így az OBS saját szövegként teheti
+a streamre, és a betűtípust, a színt, a körvonalat és a helyet ott állíthatod be.
+
+- OBS-ben: *Források → + → Szöveg (GDI+)*, pipáld be az *„Olvasás fájlból”* lehetőséget, és
+  válaszd ki az `obs_felirat.txt` fájlt.
+- Ha a „Tiszta kép a nézőknek” be van kapcsolva, a fájl ugyanannyit késik, mint a kép.
+- Streamer módban a sértő szavak a fájlban is ki vannak csillagozva.
+- Ez csak a magyar szöveg: az angol feliratot a játékképen a takarás vagy a tiszta kép tünteti el.
+- Kikapcsolása: `"obs_text_file": false` a `config.json`-ban.
+
 Más ablak fölé is teheted (pl. Xbox alkalmazás, böngészős felhőjáték), az ablak
 pontos címével:
 
@@ -315,6 +328,7 @@ Az overlay ablak csak képet mutat. A hanghoz válassz egyet:
 | `streamer_mode` | `false` | streamer mód: a sértő szavak kicsillagozva |
 | `clean_output` | `false` | Remote Play mód: késleltetett tiszta kép a nézőknek külön ablakban (csak a kész fordítás) |
 | `clean_output_delay_seconds` | `1.0` | a tiszta kép késése (0,5–5 mp); a stream hangját is ennyivel késleltesd |
+| `obs_text_file` | `true` | a kiírt magyar felirat az exe melletti `obs_felirat.txt`-be is (OBS szövegforráshoz) |
 | `fast_capture` | `true` | Remote Play mód: a feliratsáv folyamatos rögzítése külön szálon (gyorsabb takarás és olvasás); `false` értékkel visszaáll az olvasásonkénti rögzítés |
 | `row_reading` | `true` | Remote Play mód: soronkénti olvasás – csak az újonnan megjelent feliratsort olvassa be (gyorsabb fordítás, kisebb terhelés); a `fast_capture` kell hozzá és legalább 1600 képpont széles játékkép, különben mindig a teljes sávot olvassa. `false` értékkel mindig a teljes sávot olvassa |
 | `panel_opacity` | `245` | a panel háttere, 0 (átlátszó) – 255 (teljesen fedő) |

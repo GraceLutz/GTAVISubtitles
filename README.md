@@ -158,6 +158,19 @@ ready, so it shows only the finished Hungarian text, never the English one.
 - It uses about 200 MB more memory. Off by default; the delay can be set with
   `clean_output_delay_seconds` (0.5–5 s).
 
+#### The subtitle as text in OBS (optional)
+
+The program also writes the subtitle on screen to **`obs_felirat.txt`** next to the exe (one line
+per speaker; empty when there is no subtitle). OBS can then show it as its own text, with the font,
+colour, outline and position set in OBS.
+
+- In OBS: *Sources → + → Text (GDI+)*, tick *Read from file* and pick `obs_felirat.txt`.
+- With the clean picture for viewers on, the file is delayed by the same amount as the picture.
+- In streamer mode the slurs are masked in the file too.
+- This is only the translated text: the English subtitle in the game picture is removed by the cover
+  or the clean picture.
+- To turn it off: `"obs_text_file": false` in `config.json`.
+
 You can also put it over another window (e.g. the Xbox app, a cloud game in the browser),
 using the window's exact title:
 
@@ -327,6 +340,7 @@ The overlay window only shows the picture. For sound, pick one:
 | `streamer_mode` | `false` | streamer mode: slurs starred out |
 | `clean_output` | `false` | Remote Play mode: delayed clean picture for viewers in a separate window (only the finished translation) |
 | `clean_output_delay_seconds` | `1.0` | delay of the clean picture (0.5–5 s); delay the stream audio by the same amount |
+| `obs_text_file` | `true` | also writes the shown subtitle to `obs_felirat.txt` next to the exe (for an OBS Text source) |
 | `fast_capture` | `true` | Remote Play mode: capture the subtitle band continuously on its own thread (faster cover and reading); set `false` to go back to one capture per read |
 | `row_reading` | `true` | Remote Play mode: read row by row – only a newly appeared subtitle row is read (faster translation, less CPU); needs `fast_capture` and a game picture at least 1600 px wide, otherwise the whole bar is read every time. Set `false` to always read the whole bar |
 | `panel_opacity` | `245` | panel background, 0 (transparent) – 255 (fully opaque) |
