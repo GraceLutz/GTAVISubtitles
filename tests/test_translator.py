@@ -36,6 +36,22 @@ def test_keeps_speaker_name_and_translates_only_the_line():
     assert backend.calls == ["We go now."]
 
 
+@pytest.mark.parametrize("source, answer, expected", [
+    # A DeepL idézőjelbe teszi az aposztróffal kezdődő sort („'Ey, Pooch.”); az eredetiben nincs idézőjel
+    ("'Ey, Pooch. Bruh, shut the fuck up.", "„Hé, Pooch. Haver, fogd be a pofádat!”",
+     "Hé, Pooch. Haver, fogd be a pofádat!"),
+    ("'Ey. 'ey, I'mma clear all this up, a'ight?", "\"Hé, hé, ezt tisztázni fogom, oké?\"",
+     "Hé, hé, ezt tisztázni fogom, oké?"),
+    ("\"Hero cop\" saves the day.", "„Hős zsaru” megmenti a napot.", "„Hős zsaru” megmenti a napot."),
+    ("\"Get out.\"", "„Tűnj el.”", "„Tűnj el.”"),
+    ("He said go.", "Azt mondta, „menj”.", "Azt mondta, „menj”."),
+])
+def test_quotes_added_around_the_whole_translation_are_removed(source, answer, expected):
+    backend = FakeBackend({source: answer})
+
+    assert CachedTranslator(backend).translate(f"DWNPLY: {source}") == f"DWNPLY: {expected}"
+
+
 def test_repeated_line_is_served_from_cache():
     backend = FakeBackend()
     translator = CachedTranslator(backend)

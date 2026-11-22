@@ -26,6 +26,7 @@ _SPEAKER_PREFIX = re.compile(r"^([A-Z][\w.'&\- ]{0,%d}):\s+(.+)$" % (MAX_SPEAKER
 # Új beszélő kezdete egy lezárt mondat után: „… breath now. Lucia: Stop talking.”
 # „In Spanish”: nem beszélő neve, hanem megjegyzés a nyelvről, ezért ezt is lefordítjuk
 _LANGUAGE_NOTE = re.compile(r"^In [A-Z][a-z]+$")
+_DOUBLE_QUOTES = "\"„”“«»"
 _SPEAKER_BOUNDARY = re.compile(r"(?<=[.!?…])\s+(?=[A-Z](?:[^\W\d_]|[ .'&-]){0,30}:\s)")
 
 KEY_ENV_VARS = {"deepl": "DEEPL_API_KEY", "claude": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
@@ -143,10 +144,20 @@ def _texts_to_translate(parts: list[_SpeakerLine]) -> list[str]:
     return texts
 
 
+def _without_added_quotes(source: str, translated: str) -> str:
+    """A fordító által az egész sor köré tett idézőjel nélkül: a DeepL az aposztróffal kezdődő sort („'Ey,
+    Pooch.”) idézetnek veszi. Ha az eredeti is idézőjellel kezdődik, az idézőjel marad."""
+    if source.lstrip()[:1] in _DOUBLE_QUOTES:
+        return translated
+    if len(translated) >= 2 and translated[0] in _DOUBLE_QUOTES and translated[-1] in _DOUBLE_QUOTES:
+        return translated[1:-1].strip()
+    return translated
+
+
 def _join_speaker(part: _SpeakerLine, translations: Mapping[str, str]) -> str:
     """A lefordított sor: a beszélő neve marad, a nyelvi megjegyzés lefordítva kerül elé."""
     speaker, line = part
-    translated = translations[_cache_key(line)]
+    translated = _without_added_quotes(line, translations[_cache_key(line)])
     if not speaker:
         return translated
     label = translations[_cache_key(speaker)] if _LANGUAGE_NOTE.match(speaker) else speaker
