@@ -40,7 +40,7 @@ from dataclasses import dataclass, replace
 
 from .config import AppConfig
 from .fragment_filter import DIALOGUE_BOTTOM_RATIO, MIN_WHITE_FRACTION, Fragment, FrameCenter, select_subtitle
-from .line_placement import PENDING_HIDE_SECONDS, build_shown, match_lines
+from .line_placement import PENDING_HIDE_SECONDS, build_shown, match_lines, with_gone_lines_marked
 from .objective_line import ObjectiveLine
 from .ocr import (Box, OcrLine, SubtitleReader, clean_ocr_text, is_spoken_line, looks_like_subtitle, sounds_spoken,
                   spoken_lines, union_box)
@@ -490,7 +490,10 @@ class RowPipeline(SubtitlePipeline):
         objective = self._objective.pair()
         if objective is not None:
             pairs.append(objective)
-        self.shown = build_shown(pairs, hidden, self.shown, speaker_colors=self._live_speaker_colors())
+        shown = build_shown(pairs, hidden, self.shown, speaker_colors=self._live_speaker_colors())
+        # Ahonnan az angol sor eltűnt (a türelmi idő után a sorkereső sem látja), oda nem kell takarás
+        shown = with_gone_lines_marked(shown, [row.box for row in self._rows])
+        self.shown = self.shown if shown == self.shown else shown
 
     def _eager_boxes(self, now: float) -> list[Box]:
         """Az új, még olvasatlan feliratszerű sorok: rövid ideig már olvasás előtt eltakarjuk őket."""

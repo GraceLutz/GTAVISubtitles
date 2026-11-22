@@ -125,6 +125,15 @@ class Scene:
             now += TICK
         return None
 
+    def tick_until_gone(self, start, end):
+        """Mint a tick_until_change, de csak a felirat eltűnésének idejét adja (None: nem tűnt el)."""
+        now = start
+        while now < end:
+            if self.pipeline.pump(now) and self.shown is None:
+                return now
+            now += TICK
+        return None
+
     def speak(self, text=TROUBLE, box=LOWER, row_id=1):
         """Megjelenik egy sor, elolvassuk, és megjön a fordítása (1,0 és 1,3 mp között)."""
         self.show(1.0, row(row_id, box, first_seen=1.0))
@@ -649,7 +658,8 @@ def test_translation_lingers_for_the_hold_time_after_its_row_disappears(make_sce
     lingering = scene.shown
     gone_at = scene.tick_until_change(2.04, 4.0)
 
-    assert lingering.lines == (ShownLine(hu(TROUBLE), LOWER),)
+    # A fordítás marad, de az angol már nincs alatta: takarás nélkül (ne mossa el a hátteret)
+    assert lingering.lines == (ShownLine(hu(TROUBLE), LOWER, is_over_english=False),)
     assert scene.shown is None
     assert HOLD <= gone_at - 2.0 <= HOLD + RECHECK_SECONDS + TICK
 
@@ -662,7 +672,7 @@ def test_row_that_is_only_remembered_does_not_keep_the_subtitle_alive(make_scene
     for step in range(1, 11):  # a sor már nem látszik, de a sorkövető még nem engedte el
         scene.show(2.0 + step * 0.033, row(1, LOWER, first_seen=1.0, stable=30, missing=step))
     scene.show(2.363)
-    gone_at = scene.tick_until_change(2.37, 4.0)
+    gone_at = scene.tick_until_gone(2.37, 4.0)
 
     assert HOLD <= gone_at - 2.033 <= HOLD + RECHECK_SECONDS + TICK  # az óra az első hiányzó képtől jár
 
@@ -676,7 +686,8 @@ def test_subtitle_that_vanishes_after_a_long_still_picture_still_lingers_for_the
     lingering = scene.shown
     gone_at = scene.tick_until_change(6.01, 8.0)
 
-    assert lingering.lines == (ShownLine(hu(TROUBLE), LOWER),)
+    # A fordítás marad, de az angol már nincs alatta: takarás nélkül (ne mossa el a hátteret)
+    assert lingering.lines == (ShownLine(hu(TROUBLE), LOWER, is_over_english=False),)
     assert HOLD <= gone_at - 6.0 <= HOLD + RECHECK_SECONDS + TICK
 
 
@@ -692,7 +703,8 @@ def test_translation_lingers_while_an_unrelated_row_stays_on_screen(make_scene):
     lingering = scene.shown
     gone_at = scene.tick_until_change(2.04, 4.0)
 
-    assert lingering.lines == (ShownLine(hu(TROUBLE), LOWER),)
+    # A fordítás marad, de az angol már nincs alatta: takarás nélkül (ne mossa el a hátteret)
+    assert lingering.lines == (ShownLine(hu(TROUBLE), LOWER, is_over_english=False),)
     assert scene.shown is None
     assert HOLD <= gone_at - 2.0 <= HOLD + RECHECK_SECONDS + TICK
 

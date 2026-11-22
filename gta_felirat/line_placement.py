@@ -146,6 +146,21 @@ def build_shown(pairs: list[tuple[TranslatedLine, OcrLine]], hidden: list[Box],
     return previous if shown == previous else shown
 
 
+def with_gone_lines_marked(shown: Shown | None, english_rows: list[Box]) -> Shown | None:
+    """A fordított sorok megjelölve aszerint, hogy áll-e még alattuk angol sor (english_rows: a sorkereső most
+    látott sorai, a türelmi idejükkel együtt). Ha semmi sem változott, ugyanaz az objektum (nincs újrarajzolás)."""
+    if shown is None or not shown.lines:
+        return shown
+    lines = tuple(replace(line, is_over_english=any(_overlaps(line.anchor, row) for row in english_rows))
+                  for line in shown.lines)
+    return shown if lines == shown.lines else replace(shown, lines=lines)
+
+
+def _overlaps(first: Box, second: Box) -> bool:
+    return (min(first.right, second.right) > max(first.left, second.left)
+            and min(first.bottom, second.bottom) > max(first.top, second.top))
+
+
 def place_lines(translated: tuple[TranslatedLine, ...], live: tuple[OcrLine, ...],
                 previous: Shown | None) -> Shown | None:
     """A fordított sorok az élő angol sorok helyén; None, ha egyik angol párja sem látszik."""

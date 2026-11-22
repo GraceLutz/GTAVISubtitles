@@ -34,6 +34,9 @@ PREVIEW_GAP_PX = 40
 class ShownLine:
     text: str
     anchor: Box  # az angol sor helye, amelynek ez a fordítása
+    # Áll-e még ott az angol sor. Ha már eltűnt (a fordítás a tartási időre kint marad), nincs mit takarni:
+    # a takarás csak a háttér korábbi, elmosott képét festené a mozgó képre
+    is_over_english: bool = True
 
 
 @dataclass(frozen=True)
@@ -129,7 +132,7 @@ def _cover_jobs(view: LayerView, shown: Shown) -> tuple[tuple[CoverJob | BoxJob,
     if not shown.lines and shown.text:
         anchors.append((shown.anchor, None))
     # Soronként, keskeny széllel: a szomszéd sorba nem lóg bele
-    anchors += [(line.anchor, LINE_COVER_FEATHER_PX) for line in shown.lines]
+    anchors += [(line.anchor, LINE_COVER_FEATHER_PX) for line in shown.lines if line.is_over_english]
     anchors += [(box, LINE_COVER_FEATHER_PX) for box in shown.hidden]
     jobs: list[CoverJob | BoxJob] = []
     bounds: list[Box] = []
