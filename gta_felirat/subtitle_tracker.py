@@ -47,6 +47,21 @@ def is_same_subtitle(first: str, second: str, threshold: float) -> bool:
         similarity(a, b) >= threshold for a, b in zip(first_lines, second_lines))
 
 
+def is_fuller(new: str, old: str) -> bool:
+    """A new ugyanannak a feliratnak a teljesebb olvasata: soronként tartalmazza az old sorát, és betűket is ad
+    hozzá. A felirat beúszásakor az OCR a sor elejét vagy végét elvághatja („ul: We gotta…” → „Raul: We gotta…”,
+    „mamit” → „mamita.”); ilyenkor a teljes szöveget kell fordítani, különben a csonka marad kint."""
+    new_lines, old_lines = new.split("\n"), old.split("\n")
+    if not old or len(new_lines) != len(old_lines):
+        return False
+    added = 0
+    for new_line, old_line in zip(new_lines, old_lines):
+        if old_line.lower() not in new_line.lower():
+            return False
+        added += sum(ch.isalpha() for ch in new_line) - sum(ch.isalpha() for ch in old_line)
+    return added > 0
+
+
 class SubtitleTracker:
     def __init__(self, stable_reads: int, similarity_threshold: float, hold_seconds: float) -> None:
         self._stable_reads = stable_reads
@@ -70,7 +85,7 @@ class SubtitleTracker:
         text = normalize(raw_text)
         if not text:
             return self._handle_empty(now)
-        if is_same_subtitle(text, self._committed, self._threshold):
+        if is_same_subtitle(text, self._committed, self._threshold) and not is_fuller(text, self._committed):
             self._last_seen = now
             self._candidate, self._candidate_count = "", 0
             return None

@@ -30,6 +30,38 @@ def test_jittery_candidate_reads_still_count_as_stable_and_keep_longer_variant()
     assert tracker.update("Get in the car!", 0.25) == NewSubtitle("Get in the car!")
 
 
+def test_fuller_read_of_a_name_cut_on_the_left_replaces_the_committed_text():
+    tracker = make_tracker()
+    tracker.update("ul: We gotta clear these fuckers", 0.0)
+    tracker.update("ul: We gotta clear these fuckers", 0.1)
+
+    assert tracker.update("Raul: We gotta clear these fuckers", 0.2) is None  # egy olvasás még kevés
+    assert tracker.update("Raul: We gotta clear these fuckers", 0.3) == NewSubtitle(
+        "Raul: We gotta clear these fuckers")
+
+
+def test_fuller_confirmed_read_of_a_word_cut_on_the_right_replaces_the_committed_text():
+    tracker = make_tracker()
+    tracker.update("Raul: Just get there, mamit", 0.0, confirmed=True)
+
+    assert tracker.update("Raul: Just get there, mamita.", 0.1, confirmed=True) == NewSubtitle(
+        "Raul: Just get there, mamita.")
+
+
+def test_read_adding_only_punctuation_does_not_retrigger():
+    tracker = make_tracker()
+    tracker.update("Raul: That's it. Good", 0.0, confirmed=True)
+
+    assert tracker.update("Raul: That's it. Good.", 0.1, confirmed=True) is None
+
+
+def test_shorter_read_after_the_fuller_one_does_not_retrigger():
+    tracker = make_tracker()
+    tracker.update("Raul: We gotta clear these fuckers", 0.0, confirmed=True)
+
+    assert tracker.update("ul: We gotta clear these fuckers", 0.1, confirmed=True) is None
+
+
 def test_different_text_replaces_committed_after_stable_reads():
     tracker = make_tracker()
     tracker.update("First line here.", 0.0)
