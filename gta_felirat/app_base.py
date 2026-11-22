@@ -5,6 +5,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
+from . import speaker_names
 from .config import AppConfig, ConfigError, save_settings
 from .i18n import set_language, t
 from .key_vault import KeyVault, KeyVaultError, WindowsCredentialVault
@@ -27,6 +28,8 @@ class SubtitleAppBase:
         self._config = config
         self._config_path = config_path
         store = TranslationStore(config_path.parent / STORE_FILE_NAME) if config_path else None
+        if config_path:
+            speaker_names.use_file(config_path.parent / speaker_names.LEARNED_NAMES_FILE)
         self._translation = TranslationService(choice_from(config), translator, store,
                                                vault=_open_key_vault() if config_path else None)
         self._pipeline = self._create_pipeline(config, reader)

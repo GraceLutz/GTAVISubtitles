@@ -5,6 +5,7 @@ __pycache__/
 
 # Helyi adatok: a mentett fordítások és az ideiglenes írási fájlok
 mentett_forditasok.json
+tanult_nevek.json
 *.tmp
 .env
 

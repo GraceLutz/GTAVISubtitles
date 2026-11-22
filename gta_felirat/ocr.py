@@ -20,6 +20,7 @@ from .config import Region
 from .fragment_filter import (DIALOGUE_BOTTOM_RATIO, MIN_WHITE_FRACTION, Fragment, FrameCenter, row_pieces,
                               select_subtitle, white_fraction)
 from .speaker_color import SpeakerColors, sample_speaker_colors
+from .speaker_names import fix_speaker_names
 
 BRIGHT_PIXEL_LEVEL = 160  # a tévéműsor halványabb felirata (~183) is számítson
 # Sötét jelenetben egy rövid sor („It's me.”) a sáv ~0,1%-a; 0,2%-os küszöbbel be sem olvastuk
@@ -225,6 +226,7 @@ def fix_letter_misreads(text: str) -> str:
 
 def clean_ocr_text(text: str) -> str:
     text = drop_leading_fragment(fix_letter_misreads(fix_speaker_colon(strip_stray_glyphs(text))))
+    text = fix_speaker_names(text)
     return drop_glued_tail(drop_trailing_icons(drop_call_timer(text)))
 
 

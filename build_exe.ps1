@@ -12,7 +12,7 @@ $PyInstallerVersion = "6.22.3"
 # Hosszú útvonalon az onnxruntime DLL-betöltése elromlik; rövid helyen (pl. C:\gta_felirat) buildelj
 $MaxSafePathLength = 40
 # Ezek sosem kerülhetnek a csomagba (mentett fordítások, titkok)
-$ForbiddenFiles = @("mentett_forditasok.json", ".env", "*.tmp")
+$ForbiddenFiles = @("mentett_forditasok.json", "tanult_nevek.json", ".env", "*.tmp")
 
 $python = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
 if (-not (Test-Path $python)) {
