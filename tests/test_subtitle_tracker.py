@@ -64,6 +64,19 @@ def test_shorter_read_after_the_fuller_one_does_not_retrigger():
     assert tracker.update("ul: We gotta clear these fuckers", 0.1, confirmed=True) is None
 
 
+def test_reads_that_alternately_miss_the_upper_line_commit_only_once():
+    # Valós hiba: a két beszélő sorát hol együtt, hol csak az alsót olvastuk, és mindkettőt újra meg újra kiírtuk
+    tracker = make_tracker()
+    lower = "Dre'Quan: Get your hand out my fries."
+    both = "Lucia: Here...\n" + lower
+    tracker.update(lower, 0.0, confirmed=True)
+
+    assert tracker.update(both, 0.1, confirmed=True) == NewSubtitle(both)  # a kimaradt felső sor is kell
+    for step in range(2, 8):
+        assert tracker.update(lower if step % 2 else both, step / 10, confirmed=True) is None
+    assert tracker.current == both
+
+
 @pytest.mark.parametrize("cut", ["eed y'all 'to find ya favorite", ", I'mma need you to shake",
                                  "s, I'mma need you to shake", "ucia: I see hir", "you feel me?",
                                  ". oh, sorry, uh, Dre wanted me to com", "'cause you're doing too much."])

@@ -97,6 +97,9 @@ def test_glyph_glued_after_the_sentence_end_is_dropped(raw, cleaned):
     ("Jason: Iwant out.", "Jason: I want out."),
     ("Jason: It is what it is. Into the car, Inside.", "Jason: It is what it is. Into the car, Inside."),
     ("Lucia: Idol, Iceland, Ideas.", "Lucia: Idol, Iceland, Ideas."),
+    ("Local: Hey, you can spare some change? l.", "Local: Hey, you can spare some change?"),
+    ("Local: Something to eat? l...", "Local: Something to eat?"),
+    ("Jason: Who? I.", "Jason: Who? I."),
 ])
 def test_ocr_letter_misreads_are_repaired(raw, cleaned):
     assert clean_ocr_text(raw) == cleaned

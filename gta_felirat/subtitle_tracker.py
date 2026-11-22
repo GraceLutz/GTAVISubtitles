@@ -61,18 +61,20 @@ def is_cut_at_start(text: str) -> bool:
 
 
 def is_fuller(new: str, old: str) -> bool:
-    """A new ugyanannak a feliratnak a teljesebb olvasata: soronként tartalmazza az old sorát, és betűket is ad
-    hozzá. A felirat beúszásakor az OCR a sor elejét vagy végét elvághatja („ul: We gotta…” → „Raul: We gotta…”,
-    „mamit” → „mamita.”); ilyenkor a teljes szöveget kell fordítani, különben a csonka marad kint."""
+    """A new ugyanannak a feliratnak a teljesebb olvasata: egymást követő soraiban soronként tartalmazza az old
+    sorait, és betűket is ad hozzá. A felirat beúszásakor az OCR a sor elejét vagy végét elvághatja („ul: We gotta…”
+    → „Raul: We gotta…”, „mamit” → „mamita.”), vagy egy egész sort kihagyhat (két beszélőnél a felsőt); ilyenkor a
+    teljes szöveget kell fordítani, különben a csonka marad kint."""
     new_lines, old_lines = new.split("\n"), old.split("\n")
-    if not old or len(new_lines) != len(old_lines):
+    if not old or len(new_lines) < len(old_lines):
         return False
-    added = 0
-    for new_line, old_line in zip(new_lines, old_lines):
-        if old_line.lower() not in new_line.lower():
-            return False
-        added += sum(ch.isalpha() for ch in new_line) - sum(ch.isalpha() for ch in old_line)
-    return added > 0
+    added = sum(ch.isalpha() for ch in new) - sum(ch.isalpha() for ch in old)
+    return added > 0 and any(_contains_lines(new_lines[start:start + len(old_lines)], old_lines)
+                             for start in range(len(new_lines) - len(old_lines) + 1))
+
+
+def _contains_lines(new_lines: list[str], old_lines: list[str]) -> bool:
+    return all(old_line.lower() in new_line.lower() for new_line, old_line in zip(new_lines, old_lines))
 
 
 class SubtitleTracker:
