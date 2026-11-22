@@ -89,7 +89,8 @@ def test_reads_that_alternately_miss_the_upper_line_commit_only_once():
 
 @pytest.mark.parametrize("cut", ["eed y'all 'to find ya favorite", ", I'mma need you to shake",
                                  "s, I'mma need you to shake", "ucia: I see hir", "you feel me?",
-                                 ". oh, sorry, uh, Dre wanted me to com", "'cause you're doing too much."])
+                                 ". oh, sorry, uh, Dre wanted me to com", "'cause you're doing too much.",
+                                 "Local: Damn, knocked out in the third boy?\nocal: Bruh."])
 def test_read_cut_at_the_start_is_never_committed(cut):
     tracker = make_tracker()
 

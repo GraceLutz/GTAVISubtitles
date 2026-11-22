@@ -100,6 +100,9 @@ def test_glyph_glued_after_the_sentence_end_is_dropped(raw, cleaned):
     ("Local: Hey, you can spare some change? l.", "Local: Hey, you can spare some change?"),
     ("Local: Something to eat? l...", "Local: Something to eat?"),
     ("Jason: Who? I.", "Jason: Who? I."),
+    ("Roxy: She good! That's D homegiri.", "Roxy: She good! That's D homegirl."),
+    ("Partygoer: Alright, giri.", "Partygoer: Alright, girl."),
+    ("Jason: Tamagiri and Giri Road.", "Jason: Tamagiri and Girl Road."),
 ])
 def test_ocr_letter_misreads_are_repaired(raw, cleaned):
     assert clean_ocr_text(raw) == cleaned

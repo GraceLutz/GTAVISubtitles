@@ -11,6 +11,7 @@ from difflib import SequenceMatcher
 _WHITESPACE = re.compile(r"\s+")
 CUT_START_MARKS = ",.;:!?)]"  # ezzel kezdődő olvasatnak az eleje lemaradt
 APOSTROPHES = "'’"
+_CUT_NAME_LINE = re.compile(r"^[a-z][\w'’ -]{0,23}:\s")
 
 
 @dataclass(frozen=True)
@@ -57,7 +58,10 @@ def is_cut_at_start(text: str) -> bool:
     first = start[:1]
     if first in APOSTROPHES:
         first = start[1:2]  # „'cause you're…” csonka, az „'Ey, Pooch.” teljes
-    return first.islower() or first in CUT_START_MARKS
+    if first.islower() or first in CUT_START_MARKS:
+        return True
+    # Egy későbbi sorban a beszélő nevének eleje maradt le („…third boy?\nocal: Bruh.”)
+    return any(_CUT_NAME_LINE.match(line) for line in start.split("\n")[1:])
 
 
 def is_fuller(new: str, old: str) -> bool:
