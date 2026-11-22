@@ -102,6 +102,9 @@ class AppConfig:
     font_path: str = DEFAULT_FONT_PATH
     font_size_ratio: float = 0.034
     speaker_color: str = DEFAULT_SPEAKER_COLOR  # "#RRGGBB"
+    # A beszélőnevek tanulása, a program maga írja: {"learned": [új nevek], "fixes": {"Raut": {"name": "Raul",
+    # "count": 12}}}; a hibás forma nem akadályozza az indulást, a program figyelmen kívül hagyja
+    speaker_names: dict = field(default_factory=dict)
     fullscreen: bool = True
     webcam_device_index: int | None = None
     webcam_x: float = 0.02

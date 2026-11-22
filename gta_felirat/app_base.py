@@ -29,7 +29,9 @@ class SubtitleAppBase:
         self._config_path = config_path
         store = TranslationStore(config_path.parent / STORE_FILE_NAME) if config_path else None
         if config_path:
-            speaker_names.use_file(config_path.parent / speaker_names.LEARNED_NAMES_FILE)
+            # A tanult nevek és a névjavítások a config.json-ba kerülnek, a program magától írja
+            speaker_names.use_config(config.speaker_names,
+                                     save=lambda data: self._save({"speaker_names": data}))
         self._translation = TranslationService(choice_from(config), translator, store,
                                                vault=_open_key_vault() if config_path else None)
         self._pipeline = self._create_pipeline(config, reader)
