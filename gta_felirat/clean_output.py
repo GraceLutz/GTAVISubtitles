@@ -24,7 +24,8 @@ import numpy as np
 
 from .band_capture import fits
 from .band_feed import client_box_in_frame
-from .clean_frame import FrameAnalysis, analyse, with_erased_rows, with_neat_game_boxes, without_covers_over
+from .clean_frame import (FrameAnalysis, analyse, steadied, with_erased_rows, with_neat_game_boxes,
+                          without_covers_over)
 from .clean_history import HISTORY_SLACK_SECONDS, FrameBuffer, ShownHistory
 from .frosted_cover import Backdrop
 from .i18n import t
@@ -51,6 +52,7 @@ ANALYSIS_WAIT_SECONDS = 0.05
 # Az elemzés nélkül maradt képkocka az ennyivel korábbi képkocka elemzését kapja (sorok és törlés): a sor ennyi
 # idő alatt nem mozdul el érdemben, és így az angol felirat akkor sem látszik, ha az élő réteg még nem ismerte fel
 REUSE_SECONDS = 0.3
+STEADY_SECONDS = 0.3  # ennyi idő alatt előtte és utána lévő képkockák sorai alapján döntünk (clean_frame.steadied)
 THREAD_PRIORITY_BELOW_NORMAL = -1
 
 logger = logging.getLogger(__name__)
@@ -179,6 +181,8 @@ class CleanOutput:
         layer.update_config(config)
         height, width = frame.shape[:2]
         analysis = self._with_recent_analysis(frame_at, frame, _analysis_of(captured, config))
+        analysis = steadied(analysis, _finished(frames.between(frame_at - STEADY_SECONDS, frame_at - 1e-6), frame),
+                            _finished(frames.between(frame_at + 1e-6, frame_at + STEADY_SECONDS), frame))
         shown = self.history.for_frame(frame_at, now, analysis.rows)
         # A fordított vagy takart sorok betűi kitörölve; ahol a sorkereső nem talált sort, ott elmosott takarás
         image, erased_rows = with_erased_rows(frame, analysis, shown)
@@ -199,6 +203,19 @@ class CleanOutput:
         last_at, last = self._last_analysis
         is_same_size = last.erased is None or last.erased.shape == frame.shape
         return last if 0 <= frame_at - last_at <= REUSE_SECONDS and is_same_size else analysis
+
+
+def _finished(found: list[tuple[float, CapturedFrame]], frame: np.ndarray) -> list[FrameAnalysis]:
+    """A képkockák kész elemzései (nem várunk rájuk), ha a kép mérete ugyanaz."""
+    analyses = []
+    for _at, captured in found:
+        future = captured.analysis
+        if future is None or not future.done() or future.cancelled() or future.exception() is not None:
+            continue
+        analysis = future.result()
+        if analysis.rows is not None and (analysis.erased is None or analysis.erased.shape == frame.shape):
+            analyses.append(analysis)
+    return analyses
 
 
 def _analysis_of(captured: CapturedFrame, config: AppConfig) -> FrameAnalysis:

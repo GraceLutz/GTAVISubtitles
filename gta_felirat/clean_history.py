@@ -199,5 +199,9 @@ class FrameBuffer:
             found = item
         return found
 
+    def between(self, start: float, end: float) -> list[tuple[float, np.ndarray]]:
+        """A [start, end] közötti képkockák időrendben."""
+        return [item for item in self._frames if start <= item[0] <= end]
+
     def clear(self) -> None:
         self._frames.clear()

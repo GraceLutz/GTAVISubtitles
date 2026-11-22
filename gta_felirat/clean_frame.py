@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .clean_history import FrameRow, is_covered, text_boxes
+from .clean_history import FrameRow, is_covered, is_same_line, text_boxes
 from .game_box import game_boxes
 from .layer_plan import CoverJob, union
 from .ocr import Box, region_to_box
@@ -46,6 +46,32 @@ def analyse(image: np.ndarray, config: AppConfig) -> FrameAnalysis:
     boxes = [erase_row(erased, row.box) for row in found]
     rows = [FrameRow(box, row.sure, game_box) for box, row, game_box in zip(boxes, found, game_boxes(image, boxes))]
     return FrameAnalysis(rows, erased)
+
+
+def _sure_boxes(analyses: list[FrameAnalysis]) -> list[Box]:
+    return [row.box for analysis in analyses for row in analysis.rows or [] if row.sure]
+
+
+def steadied(analysis: FrameAnalysis, before: list[FrameAnalysis], after: list[FrameAnalysis]) -> FrameAnalysis:
+    """A képkocka sorai a szomszédos képkockák (before: korábbiak időrendben, after: későbbiek) fényében.
+
+    A sorkereső ugyanazt a sort képkockánként hol biztosnak, hol bizonytalannak látja, és néha meg sem találja
+    (világos háttér). A bizonytalan sort csak a már ismert fordítás takarná, a meg nem talált sort semmi: az angol
+    szöveg átlátszana. Ezért a szomszédjai szerint biztos sor itt is biztos; és ha itt nincs sor, de előtte és
+    utána ugyanott biztos sor áll, az előző képkocka elemzése (sorok és törlés) érvényes."""
+    if analysis.rows is None:
+        return analysis
+    if not analysis.rows:
+        previous = next((other for other in reversed(before) if other.rows), None)
+        later = _sure_boxes(after)
+        if previous is not None and any(row.sure and any(is_same_line(row.box, box) for box in later)
+                                        for row in previous.rows):
+            return previous
+        return analysis
+    sure = _sure_boxes(before) + _sure_boxes(after)
+    rows = [replace(row, sure=True) if not row.sure and any(is_same_line(row.box, box) for box in sure) else row
+            for row in analysis.rows]
+    return analysis if rows == analysis.rows else replace(analysis, rows=rows)
 
 
 def _overlaps(first: Box, second: Box) -> bool:
