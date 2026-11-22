@@ -151,6 +151,9 @@ def _without_added_quotes(source: str, translated: str) -> str:
         return translated
     if len(translated) >= 2 and translated[0] in _DOUBLE_QUOTES and translated[-1] in _DOUBLE_QUOTES:
         return translated[1:-1].strip()
+    quotes = [ch for ch in translated if ch in _DOUBLE_QUOTES]
+    if quotes == [translated[:1]]:  # pár nélküli nyitó idézőjel („„Hé, Lu, mondd meg…”)
+        return translated[1:].strip()
     return translated
 
 

@@ -74,7 +74,12 @@ def is_fuller(new: str, old: str) -> bool:
 
 
 def _contains_lines(new_lines: list[str], old_lines: list[str]) -> bool:
-    return all(old_line.lower() in new_line.lower() for new_line, old_line in zip(new_lines, old_lines))
+    """Soronként benne van; a szóközöket nem nézzük, mert az OCR olykor kihagyja („this?Hey, look,”)."""
+    return all(_squeezed(old_line) in _squeezed(new_line) for new_line, old_line in zip(new_lines, old_lines))
+
+
+def _squeezed(line: str) -> str:
+    return "".join(line.lower().split())
 
 
 class SubtitleTracker:

@@ -45,6 +45,9 @@ def test_keeps_speaker_name_and_translates_only_the_line():
     ("\"Hero cop\" saves the day.", "„Hős zsaru” megmenti a napot.", "„Hős zsaru” megmenti a napot."),
     ("\"Get out.\"", "„Tűnj el.”", "„Tűnj el.”"),
     ("He said go.", "Azt mondta, „menj”.", "Azt mondta, „menj”."),
+    # Valós hiba: pár nélküli nyitó idézőjel került a sor elé
+    ("'Ey, Lu, tell Rox we outside waiting on her, please?", "„Hé, Lu, mondd meg Roxnak, hogy kint várjuk, jó?",
+     "Hé, Lu, mondd meg Roxnak, hogy kint várjuk, jó?"),
 ])
 def test_quotes_added_around_the_whole_translation_are_removed(source, answer, expected):
     backend = FakeBackend({source: answer})

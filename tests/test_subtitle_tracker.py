@@ -64,6 +64,16 @@ def test_shorter_read_after_the_fuller_one_does_not_retrigger():
     assert tracker.update("ul: We gotta clear these fuckers", 0.1, confirmed=True) is None
 
 
+def test_shorter_read_missing_a_space_does_not_retrigger():
+    # Valós hiba: a hosszú sor csonka olvasata („this?Hey, look,”) újra lefordult, aztán megint a teljes
+    tracker = make_tracker()
+    full = "Dre'Quan: The fuck kinda party is this? Hey, look, I ain't finna go in nobody crib I don't know like that"
+    tracker.update(full, 0.0, confirmed=True)
+
+    assert tracker.update("Dre'Quan: The fuck kinda party is this?Hey, look,", 0.1, confirmed=True) is None
+    assert tracker.update(full + ".", 0.2, confirmed=True) is None
+
+
 def test_reads_that_alternately_miss_the_upper_line_commit_only_once():
     # Valós hiba: a két beszélő sorát hol együtt, hol csak az alsót olvastuk, és mindkettőt újra meg újra kiírtuk
     tracker = make_tracker()
