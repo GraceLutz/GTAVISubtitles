@@ -4,7 +4,7 @@ from gta_felirat.clean_frame import FrameAnalysis, with_neat_game_boxes
 from gta_felirat.clean_history import FrameRow
 from gta_felirat.config import AppConfig
 from gta_felirat.frosted_cover import Backdrop
-from gta_felirat.game_box import GameBox, find_game_box
+from gta_felirat.game_box import GameBox, find_game_box, game_boxes
 from gta_felirat.layer_plan import Shown, ShownLine
 from gta_felirat.ocr import Box
 from gta_felirat.subtitle_layer import SubtitleLayer
@@ -72,3 +72,34 @@ def test_no_box_is_drawn_without_translation_on_it():
     image, _texts = neat(None)
 
     assert not (image[GAME_BOX.top:GAME_BOX.bottom, GAME_BOX.left:GAME_BOX.right] == BOX_COLOR).all()
+
+
+def two_rows_on(boxes: list[Box]) -> np.ndarray:
+    rng = np.random.default_rng(7)
+    image = np.clip(rng.normal(170, 12, (HEIGHT, WIDTH, 3)), 0, 255).astype(np.uint8)
+    for box in boxes:
+        image[box.top:box.bottom, box.left:box.right] = 25
+    for row in (UPPER_ROW, LOWER_ROW):
+        for x in range(row.left + 16, row.right - 16, 14):
+            image[row.top + 9:row.bottom - 9, x:x + 3] = 240
+    return image
+
+
+UPPER_ROW, LOWER_ROW = Box(700, 909, 1220, 954), Box(820, 953, 1100, 998)  # a sorkereső dobozai (átfednek)
+
+
+def test_two_line_subtitle_shares_one_box_as_wide_as_its_longest_line():
+    shared = Box(712, 914, 1208, 993)
+
+    found = game_boxes(two_rows_on([shared]), [UPPER_ROW, LOWER_ROW])
+
+    assert found[0] is not None and found[0] == found[1]
+    assert abs(found[0].box.left - shared.left) <= 2 and abs(found[0].box.bottom - shared.bottom) <= 2
+
+
+def test_lines_of_different_speakers_keep_their_own_boxes():
+    upper, lower = Box(712, 914, 1208, 949), Box(832, 958, 1088, 993)
+
+    found = game_boxes(two_rows_on([upper, lower]), [UPPER_ROW, LOWER_ROW])
+
+    assert abs(found[0].box.bottom - upper.bottom) <= 2 and abs(found[1].box.left - lower.left) <= 2

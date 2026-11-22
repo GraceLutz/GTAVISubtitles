@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from .clean_history import FrameRow, is_covered, text_boxes
-from .game_box import find_game_box
+from .game_box import game_boxes
 from .layer_plan import CoverJob, union
 from .ocr import Box, region_to_box
 from .row_finder import find_rows, is_wide_enough
@@ -43,10 +43,8 @@ def analyse(image: np.ndarray, config: AppConfig) -> FrameAnalysis:
     if not found:
         return FrameAnalysis([])
     erased = image.copy()
-    rows = []
-    for row in found:
-        box = erase_row(erased, row.box)
-        rows.append(FrameRow(box, row.sure, find_game_box(image, box)))
+    boxes = [erase_row(erased, row.box) for row in found]
+    rows = [FrameRow(box, row.sure, game_box) for box, row, game_box in zip(boxes, found, game_boxes(image, boxes))]
     return FrameAnalysis(rows, erased)
 
 
