@@ -3,7 +3,7 @@
 A játék közbeni felvételekből talált hibák, a javításuk állapota és a kért, még meg nem csinált munka.
 Minden javításhoz automatikus teszt tartozik (`tests/`).
 
-Állapot: 2026-11-22, 06:20. Utolsó commit: `c268331`. A `main` ág 18 committal jár a GitHub előtt (nincs pusholva, nincs új Release).
+Állapot: 2026-11-22. Utolsó commit: `fb039dd`. A `main` ág több committal jár a GitHub előtt (nincs pusholva, nincs új Release).
 
 ## Kijavítva (commitolva)
 
@@ -21,6 +21,7 @@ Minden javításhoz automatikus teszt tartozik (`tests/`).
 | `1cb8770` | Dalsor egy félreolvasott hangjeggyel lefordult („J Ass fatJ”); Lucia sora ötször váltakozott a sorvég nélküli változattal | Dalsor kiszűrve; a sorvég nélküli olvasat ugyanaz a felirat |
 | `3ccfde6` | A mondat kisbetűs második sora külön mondatként fordult le | Az előző mondathoz fűzi |
 | `c711870` | Hibás beszélőnevek: „Raut”, „L'ucia”, „Toufists”, „GTourist”, „Locat”, „Jasor”, „Cierk”… | **Tanuló névfelismerés**: az ismert vagy megtanult névre javít; az új, sokszor látott nevet megtanulja. A tanult neveket és a javításokat („Raut” → „Raul”, hányszor) a program magától a `config.json` `speaker_names` kulcsába írja (a csomagba a commitolt config kerül, a tanultak nem) |
+| `fb039dd` | Mintás, világos háttéren (téglafal, ruha) a kitörölt betűk helyén elkent, „kisatírozott” sáv maradt | **Háttér-emlékezet**: a felirat megjelenése előtti képekből megjegyzi, mi van a betűk alatt, és álló kameránál azt teszi a helyükre. Ha a kép mozog vagy vágás volt, marad az elmosás. Fele felbontáson, legfeljebb 10×/mp tanul (~8–10 ms) |
 
 Az exe 06:3x-kor újraépült, ezekkel együtt.
 
@@ -29,6 +30,16 @@ Az exe 06:3x-kor újraépült, ezekkel együtt.
 - A takarás ugyanabban a 0,1 mp-es képkockában jelenik meg, mint az angol sor.
 - A magyar általában 0,3 mp-cel később jön; ha a DeepL lassú (0,8 mp), 1,2 mp-ig üres a hely.
 - Az angol eltűnése után már nem marad elmosott folt (`a17abc5`).
+
+## Próbapad és a teljes felvétel gépi átnézése
+
+- `tools/replay_bench.py`: a felvett képkockákat a valódi feldolgozáson játssza vissza (fordítás csak a
+  gyorsítótárból, API-hívás nélkül), és képkockánként méri, hol látszik angol szöveg, mikor jön a magyar.
+- A felvétel átnézése 372 kilógást talált. Többségük (225) 1–2 képkockás felvillanás az új sor megjelenésekor;
+  a próbapad szerint a takarás ugyanabban a képkockában elkészül, ez kirajzolási késés. A sorszám változásakor
+  70, csonka név vagy sorvég miatt 89 eset. Maradó maszat nem volt. A magyar mediánkésése 0,33 mp.
+- Hosszú kilógások: 06:22:40 (a szürke „Locals:” sor 12,7 mp-ig angolul: a sorkereső nem találta a világos
+  háttéren — javítva: a megtalált sor közvetlen szürke szomszédját is felveszi, teljes szélességben), 06:20:07–20 (♪ dalsorok 3–5 mp), 06:15:43, 04:39:02, 04:37:32 (zárójeles hangok).
 
 ## Ismert, még nem javított hibák
 
@@ -49,6 +60,5 @@ Az exe 06:3x-kor újraépült, ezekkel együtt.
      kiderült, hogy a saját szókincs önmagában megbízhatatlan (pl. „ball”/„all”, „case”/„cause” mind valódi
      szavak), ehhez angol szótár kell;
    - hibanapló fájl a gyanús esetekről.
-4. **A teljes felvétel gépi átnézése** (kérve 06:25): minden képkockán, hol lóg ki az angol, hol marad maszat.
-   Folyamatban (segédágens).
+4. ✅ **A teljes felvétel gépi átnézése** (kérve 06:25): kész, eredménye fent.
 3. **Kiadás**: push és GitHub Release csak jóváhagyással, a zip méretének és tartalmának bemutatása után.

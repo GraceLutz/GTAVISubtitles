@@ -202,7 +202,9 @@ def _centred_rows(band: np.ndarray, measures: Measures) -> Detection:
     # a sornak csak töredékeit látjuk, a halvány menet pedig a színes nevet nem. Ugyanazzal a körvonallal és
     # névvel, kicsit sötétebb szinten a sor még egyben megtalálható
     soft = _scan(band, _Tone(params.soft_white_level, params.outline_level, dim=False), measures)
-    return soft if sees_more(soft.rows, found.rows) else found
+    if sees_more(soft.rows, found.rows):
+        return soft
+    return _with_soft_neighbours(band, found, soft, measures)
 
 
 def _white_or_dim(band: np.ndarray, white: Detection, measures: Measures) -> Detection:
@@ -245,6 +247,56 @@ def _with_grey_neighbours(band: np.ndarray, white: Detection, measures: Measures
         merged[lines, columns] = dim.core[lines, columns]
     merged.setflags(write=False)
     return Detection(tuple(sorted(white.rows + extra, key=lambda r: (r.top, r.left))), merged, white.level)
+
+
+def _with_soft_neighbours(band: np.ndarray, found: Detection, soft: Detection, measures: Measures) -> Detection:
+    """A talált sorok mellé a közvetlenül fölöttük vagy alattuk álló szürke sor is, ha a lágy fehér menet látja.
+
+    Napos háttér előtt a szürke közbeszólás („Locals: Uh, no…”) betűi a hófehér szint alatt vannak, és a
+    halvány menet sem látja (a szint a háttér miatt magas); a lágy fehér menetben megvan, de nem biztos sorként.
+    Önállóan nem fogadjuk el (napos felület hamis sort adna), csak egy már megtalált sor közvetlen
+    szomszédjaként; a talált sorok érintetlenek. A lágy menet a sor szélét levágja (a bal vége a világos
+    aszfalton elvész, a tükrös vágás a jobb végét is megrövidíti): a sor teljes szélességét lásd _widened."""
+    if not found.rows or found.core is None or soft.core is None:
+        return found
+    params = measures.params
+    narrow = tuple(row for row in soft_neighbours(found.rows, soft.rows)
+                   if _grey_share(band, soft.core, row, params.dim_grey_spread) >= params.dim_min_grey_share)
+    if not narrow:
+        return found
+    wide = _scan(band, _Tone(SOFT_NEIGHBOUR_LEVEL, params.outline_level, dim=False), measures)
+    merged = found.core.copy()
+    extra = []
+    for row in narrow:
+        row, core = _widened(row, soft.core, wide, found.rows)
+        extra.append(replace(row, dim=True))
+        lines, columns = slice(row.ink_top, row.ink_bottom), slice(row.ink_left, row.ink_right)
+        merged[lines, columns] = core[lines, columns]  # a sorjelhez (row_signature) a sor betűi a közös maszkba kerülnek
+    merged.setflags(write=False)
+    return Detection(tuple(sorted(found.rows + tuple(extra), key=lambda r: (r.top, r.left))), merged, found.level)
+
+
+def _widened(row: Row, core: np.ndarray, wide: Detection, found: tuple[Row, ...]) -> tuple[Row, np.ndarray]:
+    """A szomszédsor a SOFT_NEIGHBOUR_LEVEL szinten kimért, szélesebb változatával és annak maszkjával (az a
+    sor, amelynek oszlopai a szomszédsort tartalmazzák, és amely nem fedi a talált sorokat); ha nincs ilyen,
+    a sor és a maszkja változatlan."""
+    if wide.core is not None:
+        for other in wide.rows:
+            if (_vertical_gap(row, other) < 0 and other.ink_left <= row.ink_left <= row.ink_right <= other.ink_right
+                    and not any(_vertical_gap(other, kept) < 0 for kept in found)):
+                return other, wide.core
+    return row, core
+
+
+def soft_neighbours(found: tuple[Row, ...], soft: tuple[Row, ...]) -> tuple[Row, ...]:
+    """A lágy menet sorai, amelyek egy talált sor közvetlen szomszédjai (a játék sorközénél nem nagyobb
+    réssel), de egyik talált sor képsoraira sem esnek (azok a talált sorok újratalálásai)."""
+    def is_neighbour(row: Row) -> bool:
+        return any(_vertical_gap(row, other) <= NEIGHBOUR_GAP_ROWS * (other.ink_bottom - other.ink_top)
+                   for other in found)
+
+    return tuple(row for row in soft
+                 if is_neighbour(row) and not any(_vertical_gap(row, other) < 0 for other in found))
 
 
 def grey_neighbours(white: tuple[Row, ...], dim: tuple[Row, ...]) -> tuple[Row, ...]:
@@ -293,6 +345,8 @@ def keep_white_rows(white: tuple[Row, ...], dim: tuple[Row, ...]) -> tuple[Row, 
 NEIGHBOUR_GAP_ROWS = 1.5
 # A szürke közbeszólás betűmagja ~110-150 (720p-s felvételen mérve); a tévéfelirat halvány szintje (dim_level) ennél magasabb
 GREY_NEIGHBOUR_LEVEL = 95
+# A napos háttér előtti szürke közbeszólás betűmagja ~160 felett marad (a 180-as lágy szinten a bal vége elvész)
+SOFT_NEIGHBOUR_LEVEL = 160
 SAME_LINE_TOLERANCE_PX = 4  # a két menet ugyanannak a sornak a tetejét és alját ennyin belül méri
 # A lágy fehér menet ennyivel szélesebben is ugyanazt a sort látja (más szint, más élsimítás); a beszélőnév ~70 px
 WIDER_TOLERANCE_PX = 8

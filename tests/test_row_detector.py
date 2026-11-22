@@ -1,4 +1,5 @@
 from dataclasses import astuple, replace
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -641,3 +642,34 @@ def test_tall_white_blob_around_a_sure_dim_line_does_not_take_its_place():
 
     assert dim_replaces_white(blob, tv_line)
     assert not keep_white_rows(blob, tv_line)[0].sure
+
+
+SUNNY_CHATTER_BAND = Path(__file__).parent / "fixtures" / "sunny_grey_chatter_band.png"
+SUNNY_CHATTER_LEFT = 700  # a kivágás bal széle a 1920 széles képen
+SUNNY_CHATTER_ROW_TOPS = (31, 79)  # a „Locals: …” (teljes szélességén mérve) és a „Tourists: …” sor teteje a kivágásban
+
+
+def sunny_chatter_rows(keep_lines=None):
+    """Valós kocka (napos háttér, szürke közbeszólás a fehéres sor fölött); keep_lines: csak ezek a képsorok."""
+    band = cv2.imread(str(SUNNY_CHATTER_BAND))
+    if keep_lines is not None:
+        band = np.ascontiguousarray(band[:keep_lines])
+    return detect_rows(band, SUNNY_CHATTER_LEFT, FRAME_WIDTH)
+
+
+def test_grey_chatter_row_over_a_sunny_background_is_found_next_to_the_row_below_it():
+    rows = sunny_chatter_rows()
+
+    assert [row.ink_top for row in rows] == [pytest.approx(top, abs=3) for top in SUNNY_CHATTER_ROW_TOPS]
+    assert all(row.dim and not row.sure for row in rows)
+
+
+def test_grey_chatter_row_over_a_sunny_background_is_not_taken_without_a_neighbour_row():
+    assert sunny_chatter_rows(keep_lines=62) == ()
+
+
+def test_grey_chatter_row_over_a_sunny_background_is_measured_over_its_whole_text():
+    chatter = sunny_chatter_rows()[0]
+
+    # a teljes szöveg a kivágás 50–470. oszlopa közé esik (a lágy fehér szint a bal végét elvesztené)
+    assert chatter.ink_left <= 52 and chatter.ink_right >= 465
