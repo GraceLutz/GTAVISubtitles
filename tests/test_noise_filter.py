@@ -81,6 +81,23 @@ def test_glyph_glued_after_the_sentence_end_is_dropped(raw, cleaned):
     assert clean_ocr_text(raw) == cleaned
 
 
+@pytest.mark.parametrize("raw, cleaned", [
+    # Az OCR betűhibái, amelyek félrefordítást okoznak („On my od” → „Az én véleményem szerint”)
+    ("Raul: On my od, you really fucked us now!", "Raul: On my god, you really fucked us now!"),
+    ("Lucia: Oh my od.", "Lucia: Oh my god."),
+    ("Raul: Movei Move it!", "Raul: Move! Move it!"),
+    ("Lucia: l'm gonna send you the combo.", "Lucia: I'm gonna send you the combo."),
+    ("Jason: l'll be back.", "Jason: I'll be back."),
+    ("Raul: Go, go, go!", "Raul: Go, go, go!"),
+    ("Jason: Hi, Hi there.", "Jason: Hi, Hi there."),
+    ("Cop: Taxi drivers know the way.", "Cop: Taxi drivers know the way."),
+    ("Jason: That's the OD unit.", "Jason: That's the OD unit."),
+    ("Raul: Pull the lever.", "Raul: Pull the lever."),
+])
+def test_ocr_letter_misreads_are_repaired(raw, cleaned):
+    assert clean_ocr_text(raw) == cleaned
+
+
 @pytest.mark.parametrize("text", [
     "Játék indítása",
     "Játék indítása 12 órája",

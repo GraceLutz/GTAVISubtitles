@@ -50,6 +50,14 @@ SPEAKER_PATTERN = re.compile(r"^[A-Z](?:[^\W\d_]|[ .'&-]){0,30}:\s*\S")
 # Világos háttér előtt a név utáni kettőspontot az OCR pontosvesszőnek olvassa („Cal; Alright…”); legfeljebb
 # kétszavas név után ez beszélő, nem mondatközi pontosvessző
 MISREAD_SPEAKER_COLON = re.compile(r"^([A-Z][^\W\d_]*(?:[ .'-][A-Za-z][^\W\d_]*)?);(?=\s*\S)")
+# Az OCR betűhibái, amelyek angolul nem lehetnek szavak, és félrefordítást okoznak (a fordítás a hibás szóból
+# találgat: „On my od” → „Az én véleményem szerint”):
+# - kisbetűs „l” az „I” helyén az összevonásban („l'm”, „l'll”);
+LOWER_L_AS_I = re.compile(r"(?<![\w'’])l(?=['’](?:m|ll|ve|d)\b)")
+# - a felkiáltójel „i”-nek olvasva az ismételt szó előtt („Movei Move it!”);
+EXCLAMATION_AS_I = re.compile(r"\b([A-Za-z]{2,})i (?=(?i:\1)\b)")
+# - a „god” első betűje elveszett („On my od”)
+GOD_WITHOUT_G = re.compile(r"\b([Mm]y) od\b")
 # Egész sort kitevő zárójeles hang- vagy zenefelirat; a hangjegyet az OCR néha „J”-nek olvassa, de a zárójel marad
 CAPTION_ROW = re.compile(r"^[\[(][^\])]*[\])]$|[♪♫]")
 # A sor elején magában álló kettőspont vagy pontosvessző (a beszélő neve nélkül maradt)
@@ -188,8 +196,15 @@ def fix_speaker_colon(text: str) -> str:
     return MISREAD_SPEAKER_COLON.sub(r"\1:", text)
 
 
+def fix_letter_misreads(text: str) -> str:
+    """Az OCR jellegzetes betűhibái, amelyek angolul nem lehetnek szavak (l'm, „Movei Move”, „my od”)."""
+    text = LOWER_L_AS_I.sub("I", text)
+    text = EXCLAMATION_AS_I.sub(r"\1! ", text)
+    return GOD_WITHOUT_G.sub(r"\1 god", text)
+
+
 def clean_ocr_text(text: str) -> str:
-    text = drop_leading_fragment(fix_speaker_colon(strip_stray_glyphs(text)))
+    text = drop_leading_fragment(fix_letter_misreads(fix_speaker_colon(strip_stray_glyphs(text))))
     return drop_glued_tail(drop_trailing_icons(drop_call_timer(text)))
 
 
