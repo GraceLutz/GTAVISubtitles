@@ -48,6 +48,9 @@ ANALYSER_THREADS = 3  # sorkeresés és betűtörlés: képkockánként 30–120
 # megy ki (elmosott takarással), és megjelenítéskor sem várunk tovább ennél
 MAX_PENDING_ANALYSES = 2 * ANALYSER_THREADS
 ANALYSIS_WAIT_SECONDS = 0.05
+# Az elemzés nélkül maradt képkocka az ennyivel korábbi képkocka elemzését kapja (sorok és törlés): a sor ennyi
+# idő alatt nem mozdul el érdemben, és így az angol felirat akkor sem látszik, ha az élő réteg még nem ismerte fel
+REUSE_SECONDS = 0.3
 THREAD_PRIORITY_BELOW_NORMAL = -1
 
 logger = logging.getLogger(__name__)
@@ -86,6 +89,7 @@ class CleanOutput:
         self._analysers: ThreadPoolExecutor | None = None
         self._pending = 0  # a rögzítő szál számolja; a kész elemzés visszahívása csökkenti
         self._pending_lock = threading.Lock()
+        self._last_analysis: tuple[float, FrameAnalysis] | None = None  # (képkocka ideje, elemzés); a kép szála írja
 
     @property
     def is_running(self) -> bool:
@@ -174,7 +178,7 @@ class CleanOutput:
         frame = captured.image
         layer.update_config(config)
         height, width = frame.shape[:2]
-        analysis = _analysis_of(captured, config)
+        analysis = self._with_recent_analysis(frame_at, frame, _analysis_of(captured, config))
         shown = self.history.for_frame(frame_at, now, analysis.rows)
         # A fordított vagy takart sorok betűi kitörölve; ahol a sorkereső nem talált sort, ott elmosott takarás
         image, erased_rows = with_erased_rows(frame, analysis, shown)
@@ -183,6 +187,18 @@ class CleanOutput:
             image = with_neat_game_boxes(image, plan, analysis, erased_rows)
             image = draw_on_frame(image, without_covers_over(plan, erased_rows))
         cv2.imshow(title, image)
+
+
+    def _with_recent_analysis(self, frame_at: float, frame: np.ndarray, analysis: FrameAnalysis) -> FrameAnalysis:
+        """Az elemzés, vagy ha ez a képkocka kimaradt, a közvetlenül előtte lévőé."""
+        if analysis.rows is not None:
+            self._last_analysis = (frame_at, analysis)
+            return analysis
+        if self._last_analysis is None:
+            return analysis
+        last_at, last = self._last_analysis
+        is_same_size = last.erased is None or last.erased.shape == frame.shape
+        return last if 0 <= frame_at - last_at <= REUSE_SECONDS and is_same_size else analysis
 
 
 def _analysis_of(captured: CapturedFrame, config: AppConfig) -> FrameAnalysis:

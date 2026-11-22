@@ -1,4 +1,5 @@
-"""A tiszta kép nem lassíthatja a játékot: nem vár a késő elemzésre, és nem halmoz fel elemzéseket."""
+"""A tiszta kép nem lassíthatja a játékot: nem vár a késő elemzésre, nem halmoz fel elemzéseket, és a kimaradt
+képkocka a szomszédja elemzését kapja."""
 
 import threading
 import time
@@ -8,8 +9,11 @@ import numpy as np
 
 from gta_felirat import clean_output
 from gta_felirat.clean_frame import FrameAnalysis
+from gta_felirat.clean_history import FrameBuffer, FrameRow
 from gta_felirat.clean_output import MAX_PENDING_ANALYSES, CapturedFrame, CleanOutput
 from gta_felirat.config import AppConfig
+from gta_felirat.ocr import Box
+from gta_felirat.subtitle_layer import SubtitleLayer
 
 SLOW_LIMIT_SECONDS = 0.5
 
@@ -48,3 +52,25 @@ def test_frames_beyond_the_backlog_are_not_analysed(monkeypatch):
     finally:
         release.set()
         output._analysers.shutdown(wait=True)
+
+
+def test_frame_left_without_analysis_reuses_the_previous_frames_rows(monkeypatch):
+    shown_images = []
+    monkeypatch.setattr(clean_output.cv2, "imshow", lambda _title, image: shown_images.append(image))
+    row = Box(700, 915, 1220, 948)
+    english = np.zeros((1080, 1920, 3), np.uint8)
+    english[row.top:row.bottom, row.left:row.right] = 255  # az angol sor helye világos
+    analysed: Future = Future()
+    analysed.set_result(FrameAnalysis([FrameRow(row)]))
+    frames = FrameBuffer(keep_seconds=2.0)
+    frames.push(10.0, CapturedFrame(english, analysed))
+    frames.push(10.033, CapturedFrame(english.copy(), clean_output._skipped()))  # túl sok volt a függő elemzés
+    config = AppConfig()
+    output = CleanOutput(hwnd=0, config=config)
+    layer = SubtitleLayer(config, on_change=lambda _c: None)
+
+    output._show("clean", layer, frames, now=11.0)
+    output._show("clean", layer, frames, now=11.04)
+
+    second = shown_images[1][row.top:row.bottom, row.left:row.right]
+    assert not np.array_equal(second, english[row.top:row.bottom, row.left:row.right])
