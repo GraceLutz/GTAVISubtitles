@@ -10,18 +10,22 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from .clean_history import FrameRow, is_covered, text_boxes
-from .layer_plan import CoverJob
-from .ocr import region_to_box
+from .game_box import find_game_box
+from .layer_plan import CoverJob, union
+from .ocr import Box, region_to_box
 from .row_finder import find_rows, is_wide_enough
 from .text_eraser import erase_row
 
 if TYPE_CHECKING:
-    import numpy as np
-
     from .config import AppConfig
     from .layer_plan import LayerPlan, Shown
-    from .ocr import Box
+
+REFERENCE_WIDTH = 1920
+NEAT_PAD_X_PX = 14  # 1920 széles képen: a magyar szöveg két oldalán ennyi a doboz ráhagyása
+NEAT_MARGIN_PX = 2  # a játékdoboz élsimított széle is alá kerüljön
 
 
 @dataclass(frozen=True)
@@ -39,7 +43,11 @@ def analyse(image: np.ndarray, config: AppConfig) -> FrameAnalysis:
     if not found:
         return FrameAnalysis([])
     erased = image.copy()
-    return FrameAnalysis([FrameRow(erase_row(erased, row.box), row.sure) for row in found], erased)
+    rows = []
+    for row in found:
+        box = erase_row(erased, row.box)
+        rows.append(FrameRow(box, row.sure, find_game_box(image, box)))
+    return FrameAnalysis(rows, erased)
 
 
 def _overlaps(first: Box, second: Box) -> bool:
@@ -59,6 +67,50 @@ def with_erased_rows(image: np.ndarray, analysis: FrameAnalysis,
     for box in erased_rows:
         output[box.top:box.bottom, box.left:box.right] = analysis.erased[box.top:box.bottom, box.left:box.right]
     return output, erased_rows
+
+
+def _text_boxes(plan: LayerPlan) -> list[Box]:
+    return [Box(job.x, job.y, job.x + job.rendered.width, job.y + job.rendered.height)
+            for job in plan.texts]
+
+
+def _overlap_y(first: Box, second: Box) -> bool:
+    return min(first.bottom, second.bottom) > max(first.top, second.top)
+
+
+def _merged(boxes: list[Box]) -> list[Box]:
+    merged: list[Box] = []
+    for box in boxes:
+        touching = [other for other in merged if _overlap_y(box, other)
+                    and min(box.right, other.right) > max(box.left, other.left)]
+        merged = [other for other in merged if other not in touching] + [union([box, *touching])]
+    return merged
+
+
+def with_neat_game_boxes(image: np.ndarray, plan: LayerPlan | None, analysis: FrameAnalysis,
+                         erased_rows: list[Box]) -> np.ndarray:
+    """A kitörölt sorok mögötti játékdoboz helyén éles szélű, egyszínű doboz, amely a magyar szöveget is
+    körbefogja (a törlés után a doboz maradéka szakadozott). Az image-et helyben módosítja (már másolat)."""
+    if plan is None or not plan.texts or not analysis.rows or not erased_rows:
+        return image
+    height, width = image.shape[:2]
+    pad_x = round(NEAT_PAD_X_PX * width / REFERENCE_WIDTH)
+    texts = _text_boxes(plan)
+    painted: list[tuple[Box, tuple[int, int, int]]] = []
+    for row in analysis.rows:
+        if row.game_box is None or row.box not in erased_rows:
+            continue
+        game = row.game_box.box
+        on_it = [text for text in texts if _overlap_y(text, game)]
+        if not on_it:
+            continue  # nincs rajta magyar szöveg: üres doboz nem kell
+        around = [Box(text.left - pad_x, text.top, text.right + pad_x, text.bottom) for text in on_it]
+        painted.append((union([game, *around]), row.game_box.color))
+    for box in _merged([box for box, _color in painted]):
+        color = next(color for part, color in painted if is_covered(part, [box]))
+        image[max(0, box.top - NEAT_MARGIN_PX):min(height, box.bottom + NEAT_MARGIN_PX),
+              max(0, box.left - NEAT_MARGIN_PX):min(width, box.right + NEAT_MARGIN_PX)] = color
+    return image
 
 
 def without_covers_over(plan: LayerPlan, erased_rows: list[Box]) -> LayerPlan:
