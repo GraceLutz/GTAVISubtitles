@@ -55,6 +55,21 @@ def test_bracketed_caption_row_is_left_out_and_does_not_swallow_the_spoken_row_b
     assert lines == (OcrLine("Lucia: Baby, this has been a long time comin'.", LOWER, (LOWER,)),)
 
 
+def test_row_starting_lowercase_continues_the_sentence_above_even_after_a_period():
+    # Valós hiba: a mondat második sora külön sorként, külön fordult le
+    lines = spoken_lines([("Tourist: Okay, we're-we're gonna get outta here..", UPPER),
+                          ("there won't be any more trouble from us.", LOWER)])
+
+    assert [line.text for line in lines] == [
+        "Tourist: Okay, we're-we're gonna get outta here.. there won't be any more trouble from us."]
+
+
+def test_row_with_a_cut_speaker_name_is_not_glued_to_the_row_above():
+    lines = spoken_lines([("Local: Damn, knocked out in the third boy?", UPPER), ("ocal: Bruh.", LOWER)])
+
+    assert len(lines) == 2
+
+
 @pytest.mark.parametrize("spoken", ["Lucia: So what?", "Jason: Call me J.", "Lucia: Sorry, but that's all I have",
                                     "Dre'Quan: Jason, look at this.", "Raul: 5 more minutes.", "Jacki: Oh, Kamal!"])
 def test_spoken_row_starting_like_a_note_is_still_translated(spoken):

@@ -47,6 +47,7 @@ MIN_SHOUTED_WORD_LETTERS = 2  # az „I” és az „A” nem számít
 MAX_SHOUTED_WORD_RATIO = 0.5
 # Beszélő neve: csak betűk (számjegy nem, így a hívás-időzítő „Jason 00:04” nem beszélő)
 SPEAKER_PATTERN = re.compile(r"^[A-Z](?:[^\W\d_]|[ .'&-]){0,30}:\s*\S")
+CUT_SPEAKER_NAME = re.compile(r"^[a-z][\w'’ -]{0,23}:\s")  # a név eleje lemaradt („ocal: Bruh.”)
 # Világos háttér előtt a név utáni kettőspontot az OCR pontosvesszőnek olvassa („Cal; Alright…”); legfeljebb
 # kétszavas név után ez beszélő, nem mondatközi pontosvessző
 MISREAD_SPEAKER_COLON = re.compile(r"^([A-Z][^\W\d_]*(?:[ .'-][A-Za-z][^\W\d_]*)?);(?=\s*\S)")
@@ -333,13 +334,21 @@ def spoken_lines(fragments: list[tuple[str, Box]]) -> tuple[OcrLine, ...]:
         if lines and _ends_with_misread_period(lines[-1].text.rstrip(), row.text):
             previous = lines.pop()
             lines.append(replace(previous, text=previous.text.rstrip()[:-1] + "."))
-        if lines and not starts_new_speaker and not lines[-1].text.endswith(SENTENCE_END):
+        is_continuation = not lines[-1].text.endswith(SENTENCE_END) or _starts_lowercase(row.text) if lines else False
+        if lines and not starts_new_speaker and is_continuation:
             previous = lines.pop()
             row = OcrLine(f"{previous.text} {row.text}", union_box([previous.box, row.box]),
                           previous.rows + row.rows)
         lines.append(row)
     cleaned = (OcrLine(clean_ocr_text(line.text), line.box, line.rows) for line in lines)
     return tuple(line for line in cleaned if line.text)
+
+
+def _starts_lowercase(text: str) -> bool:
+    """Kisbetűvel kezdődő sor: az előző mondat folytatása, akkor is, ha az előző sor végén pont áll („…outta
+    here.. / there won't be any more trouble”). A levágott beszélőnév („ocal: Bruh.”) nem folytatás."""
+    stripped = text.strip()
+    return stripped[:1].islower() and not CUT_SPEAKER_NAME.match(stripped)
 
 
 def union_box(boxes: list[Box]) -> Box:
