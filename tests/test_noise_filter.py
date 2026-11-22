@@ -124,6 +124,17 @@ def test_english_lines_with_an_occasional_accent_are_kept(text):
 
 
 @pytest.mark.parametrize("text", [
+    # Valós hiba: stream nélkül a Veyra ablakában a saját felülete látszott, és „Enabled:” beszélőként fordult le
+    "Enabled: Automatic removal •",
+    "Enabled: Automatic removal; VSync · display 180.0 Hz; Low-latency queue",
+    "Input: 1920x1080 · 60.00",
+    "Optical flow: Not run",
+])
+def test_remote_play_app_labels_are_not_subtitles(text):
+    assert not looks_like_subtitle(text)
+
+
+@pytest.mark.parametrize("text", [
     "Focus +10% SMALL SALTW",
     "Strength -10% Stamina bonus",
     "+$250 Cash received from mission",

@@ -47,6 +47,9 @@ MIN_SHOUTED_WORD_LETTERS = 2  # az „I” és az „A” nem számít
 MAX_SHOUTED_WORD_RATIO = 0.5
 # Beszélő neve: csak betűk (számjegy nem, így a hívás-időzítő „Jason 00:04” nem beszélő)
 SPEAKER_PATTERN = re.compile(r"^[A-Z](?:[^\W\d_]|[ .'&-]){0,30}:\s*\S")
+# A Remote Play program (Veyra) saját felületének „Címke: érték” sorai, ha stream helyett az látszik az ablakban
+APP_UI_LABEL = re.compile(r"^(?:Enabled|Disabled|Input|Output|Signal|Source|Preset|Status|Error|Optical flow"
+                          r"|Variable refresh|Windows HDR|Upscaling algorithm|Target size)\s*:")
 # Világos háttér előtt a név utáni kettőspontot az OCR pontosvesszőnek olvassa („Cal; Alright…”); legfeljebb
 # kétszavas név után ez beszélő, nem mondatközi pontosvessző
 MISREAD_SPEAKER_COLON = re.compile(r"^([A-Z][^\W\d_]*(?:[ .'-][A-Za-z][^\W\d_]*)?);(?=\s*\S)")
@@ -267,6 +270,8 @@ def looks_like_subtitle(text: str) -> bool:
     if is_mostly_accented(text):
         return False
     letters = sum(ch.isalpha() for ch in text)
+    if APP_UI_LABEL.match(text):
+        return False
     if SPEAKER_PATTERN.match(text):
         return True
     if is_hud_notification(text):
