@@ -26,6 +26,8 @@ if TYPE_CHECKING:
 REFERENCE_WIDTH = 1920
 NEAT_PAD_X_PX = 14  # 1920 széles képen: a magyar szöveg két oldalán ennyi a doboz ráhagyása
 NEAT_MARGIN_PX = 2  # a játékdoboz élsimított széle is alá kerüljön
+STEADY_NEIGHBOURS = 2  # ennyi szomszédos képkockán kell ugyanott állnia a középre igazított bizonytalan sornak
+CENTRED_TOLERANCE = 0.005  # a képszélesség ennyi része (1920-on ~10 px): ennyire tér el a középre igazított sor közepe
 
 
 @dataclass(frozen=True)
@@ -69,9 +71,24 @@ def steadied(analysis: FrameAnalysis, before: list[FrameAnalysis], after: list[F
             return previous
         return analysis
     sure = _sure_boxes(before) + _sure_boxes(after)
-    rows = [replace(row, sure=True) if not row.sure and any(is_same_line(row.box, box) for box in sure) else row
+    width = None if analysis.erased is None else analysis.erased.shape[1]
+    rows = [replace(row, sure=True) if not row.sure and (any(is_same_line(row.box, box) for box in sure)
+                                                         or _is_steady_centred(row.box, width, before, after))
+            else row
             for row in analysis.rows]
     return analysis if rows == analysis.rows else replace(analysis, rows=rows)
+
+
+def _is_steady_centred(box: Box, frame_width: int | None, before: list[FrameAnalysis],
+                       after: list[FrameAnalysis]) -> bool:
+    """A küldetésutasítás és a párbeszéd halvány második sora sosem biztos, de pontosan középre igazított, és
+    képkockákon át ugyanott áll; így olvasás (fordítás) előtt is takarható. Rendszámtábla, felirat ritkán ilyen.
+    A megjelenése első képkockáján is: a késleltetett kép miatt a későbbi képkockák már megvannak."""
+    if frame_width is None or abs((box.left + box.right) / 2 - frame_width / 2) > CENTRED_TOLERANCE * frame_width:
+        return False
+
+    seen = sum(any(is_same_line(box, row.box) for row in analysis.rows or []) for analysis in before + after)
+    return seen >= STEADY_NEIGHBOURS
 
 
 def _overlaps(first: Box, second: Box) -> bool:
