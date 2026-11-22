@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 
 _WHITESPACE = re.compile(r"\s+")
+CUT_START_MARKS = ",.;:!?)]"  # ezzel kezdődő olvasatnak az eleje lemaradt
+APOSTROPHES = "'’"
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,17 @@ def is_same_subtitle(first: str, second: str, threshold: float) -> bool:
     first_lines, second_lines = first.split("\n"), second.split("\n")
     return len(first_lines) == len(second_lines) and all(
         similarity(a, b) >= threshold for a, b in zip(first_lines, second_lines))
+
+
+def is_cut_at_start(text: str) -> bool:
+    """A felirat eleje lemaradt: a játék sora nagybetűvel, idézőjellel vagy aposztróffal kezdődik, sosem
+    kisbetűvel vagy írásjellel („eed y'all…”, „, I'mma…”, „ucia: I see…”). Ezt nem fordítjuk le: a teljes
+    olvasat egy pillanat múlva jön."""
+    start = text.lstrip()
+    first = start[:1]
+    if first in APOSTROPHES:
+        first = start[1:2]  # „'cause you're…” csonka, az „'Ey, Pooch.” teljes
+    return first.islower() or first in CUT_START_MARKS
 
 
 def is_fuller(new: str, old: str) -> bool:
@@ -85,7 +98,13 @@ class SubtitleTracker:
         text = normalize(raw_text)
         if not text:
             return self._handle_empty(now)
-        if is_same_subtitle(text, self._committed, self._threshold) and not is_fuller(text, self._committed):
+        if is_cut_at_start(text):
+            if self._committed:
+                self._last_seen = now  # a felirat még látszik, csak az elejét nem láttuk
+            return None
+        is_same = is_same_subtitle(text, self._committed, self._threshold) and not is_fuller(text, self._committed)
+        # A kiírt felirat egy részének olvasata („Yeah, Dre'Quan,” a teljes sor után): ugyanaz a sor látszik még
+        if is_same or is_fuller(self._committed, text):
             self._last_seen = now
             self._candidate, self._candidate_count = "", 0
             return None

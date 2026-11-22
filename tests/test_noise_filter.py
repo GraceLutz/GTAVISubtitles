@@ -93,6 +93,10 @@ def test_glyph_glued_after_the_sentence_end_is_dropped(raw, cleaned):
     ("Cop: Taxi drivers know the way.", "Cop: Taxi drivers know the way."),
     ("Jason: That's the OD unit.", "Jason: That's the OD unit."),
     ("Raul: Pull the lever.", "Raul: Pull the lever."),
+    ("Dre'Quan: When Isay all that?", "Dre'Quan: When I say all that?"),
+    ("Jason: Iwant out.", "Jason: I want out."),
+    ("Jason: It is what it is. Into the car, Inside.", "Jason: It is what it is. Into the car, Inside."),
+    ("Lucia: Idol, Iceland, Ideas.", "Lucia: Idol, Iceland, Ideas."),
 ])
 def test_ocr_letter_misreads_are_repaired(raw, cleaned):
     assert clean_ocr_text(raw) == cleaned

@@ -39,7 +39,13 @@ def test_unfinished_sentence_continues_on_the_next_row():
 
 
 @pytest.mark.parametrize("caption", ["[♪ Money For Nothing – Dire Straits ♪]", "[J Money For Nothing - Dire Straits J]",
-                                     "[music playing]"])
+                                     "[music playing]", "[frustrat", "(sighs",
+                                     # a dal sora: a hangjegyet az OCR S, J, 5 vagy ∫ betűnek olvassa
+                                     "DWNPLY: S Never sell out, I got packs J",
+                                     "DWNPLY: 5 All of these niggas they know me S",
+                                     "DWNPLY: J Okay, okay, okay J",
+                                     "I sell crack by the ounce ∫",
+                                     "DWNPLY: S Bitch I got packs at my house, I sell crack by the ounce ∫"])
 def test_bracketed_caption_row_is_left_out_and_does_not_swallow_the_spoken_row_below(caption):
     lines = spoken_lines([(caption, UPPER), ("Lucia: Baby, this has been a long time comin'.", LOWER)])
 

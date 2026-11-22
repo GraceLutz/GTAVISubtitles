@@ -58,8 +58,16 @@ LOWER_L_AS_I = re.compile(r"(?<![\w'’])l(?=['’](?:m|ll|ve|d)\b)")
 EXCLAMATION_AS_I = re.compile(r"\b([A-Za-z]{2,})i (?=(?i:\1)\b)")
 # - a „god” első betűje elveszett („On my od”)
 GOD_WITHOUT_G = re.compile(r"\b([Mm]y) od\b")
+# - az „I” egybeolvasva a mögötte álló igével („When Isay all that?” → „Mikor mondom…”); csak gyakori igék,
+#   mert az I-vel kezdődő valódi szavakat (It, Is, Into, Inside) nem szabad szétvágni
+I_GLUED_TO_VERB = re.compile(r"\bI(say|said|want|know|knew|need|think|thought|got|was|can|could|will|would|"
+                             r"did|do|have|had|like|love|mean|just|feel|told|gotta|swear|ain't)\b")
 # Egész sort kitevő zárójeles hang- vagy zenefelirat; a hangjegyet az OCR néha „J”-nek olvassa, de a zárójel marad
-CAPTION_ROW = re.compile(r"^[\[(][^\])]*[\])]$|[♪♫]")
+# A beúszó vagy elvágott hangfelirat zárójele még nem látszik („[frustrat”): az is hangfelirat, nem szöveg
+CAPTION_ROW = re.compile(r"^[\[(][^\])]*[\])]?$|[♪♫]")
+# A dal sora a hangjegyek között; a hangjegyet az OCR S, J, 5 vagy ∫ jelnek olvassa („DWNPLY: S Never sell out J”).
+# A ∫ és a magában álló J a sor végén angol szövegben nem fordul elő; az S és az 5 csak párban, a sor két végén
+SONG_ROW = re.compile(r"^(?:[A-Z][\w.'&\- ]{0,23}:\s+)?[SJ5∫]\s.*\s[SJ5∫]$|\s[J∫]$")
 # A sor elején magában álló kettőspont vagy pontosvessző (a beszélő neve nélkül maradt)
 LEADING_ORPHAN_PUNCTUATION = re.compile(r"^\s*[:;]+\s*")
 # A telefonhívás kijelzője a sor végén: „… alright? Jason 00:05 D”
@@ -200,6 +208,7 @@ def fix_letter_misreads(text: str) -> str:
     """Az OCR jellegzetes betűhibái, amelyek angolul nem lehetnek szavak (l'm, „Movei Move”, „my od”)."""
     text = LOWER_L_AS_I.sub("I", text)
     text = EXCLAMATION_AS_I.sub(r"\1! ", text)
+    text = I_GLUED_TO_VERB.sub(r"I \1", text)
     return GOD_WITHOUT_G.sub(r"\1 god", text)
 
 
@@ -289,7 +298,8 @@ def join_lines(fragments: list[tuple[str, Box]]) -> str:
 
 def is_caption_row(text: str) -> bool:
     """Zárójeles hang- vagy zenefelirat („[♪ Money For Nothing ♪]”, „[music playing]”): nem kimondott szöveg."""
-    return bool(CAPTION_ROW.search(text.strip()))
+    stripped = text.strip()
+    return bool(CAPTION_ROW.search(stripped) or SONG_ROW.search(stripped))
 
 
 def _ends_with_misread_period(previous: str, row: str) -> bool:

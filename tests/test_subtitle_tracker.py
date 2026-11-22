@@ -1,3 +1,5 @@
+import pytest
+
 from gta_felirat.subtitle_tracker import NewSubtitle, SubtitleCleared, SubtitleTracker, normalize
 
 
@@ -60,6 +62,41 @@ def test_shorter_read_after_the_fuller_one_does_not_retrigger():
     tracker.update("Raul: We gotta clear these fuckers", 0.0, confirmed=True)
 
     assert tracker.update("ul: We gotta clear these fuckers", 0.1, confirmed=True) is None
+
+
+@pytest.mark.parametrize("cut", ["eed y'all 'to find ya favorite", ", I'mma need you to shake",
+                                 "s, I'mma need you to shake", "ucia: I see hir", "you feel me?",
+                                 ". oh, sorry, uh, Dre wanted me to com", "'cause you're doing too much."])
+def test_read_cut_at_the_start_is_never_committed(cut):
+    tracker = make_tracker()
+
+    assert tracker.update(cut, 0.0, confirmed=True) is None
+    assert tracker.update(cut, 0.1, confirmed=True) is None
+    assert tracker.current == ""
+
+
+def test_read_starting_with_an_apostrophe_word_is_committed():
+    tracker = make_tracker()
+
+    assert tracker.update("'Ey, Pooch. Bruh, shut up.", 0.0, confirmed=True) == NewSubtitle(
+        "'Ey, Pooch. Bruh, shut up.")
+
+
+def test_partial_read_after_the_full_line_does_not_retrigger():
+    tracker = make_tracker()
+    tracker.update("Bae-Luxe: Yeah, Dre'Quan, you not even worried about where she gone?", 0.0, confirmed=True)
+
+    assert tracker.update("Bae-Luxe: Yeah, Dre'Quan,", 0.1, confirmed=True) is None
+    assert tracker.current == "Bae-Luxe: Yeah, Dre'Quan, you not even worried about where she gone?"
+
+
+def test_cut_read_keeps_the_committed_subtitle_alive():
+    tracker = make_tracker(hold=0.5)
+    tracker.update("Raul: We go now.", 0.0, confirmed=True)
+
+    tracker.update("e go now.", 0.4, confirmed=True)
+
+    assert tracker.update("", 0.6) is None  # 0,4-kor még látszott: nem tűnt el
 
 
 def test_different_text_replaces_committed_after_stable_reads():
