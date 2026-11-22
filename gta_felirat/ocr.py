@@ -71,7 +71,11 @@ I_GLUED_TO_VERB = re.compile(r"\bI(say|said|want|know|knew|need|think|thought|go
 CAPTION_ROW = re.compile(r"^[\[(][^\])]*[\])]?$|[♪♫]")
 # A dal sora a hangjegyek között; a hangjegyet az OCR S, J, 5 vagy ∫ jelnek olvassa („DWNPLY: S Never sell out J”).
 # A ∫ és a magában álló J a sor végén angol szövegben nem fordul elő; az S és az 5 csak párban, a sor két végén
-SONG_ROW = re.compile(r"^(?:[A-Z][\w.'&\- ]{0,23}:\s+)?[SJ5∫]\s.*\s[SJ5∫]$|\s[J∫]$")
+# Egyetlen hangjegy is elég, ha angolul nem lehet betű: a sor elején magában álló S vagy J nagybetűs szó előtt
+# („Lucia: S Big ol titties!”), magában álló J a sor közepén („…! J [laughs]”), vagy kisbetűhöz tapadó J a végén
+# („Ass fatJ”)
+SONG_ROW = re.compile(r"^(?:[A-Z][\w.'&\- ]{0,23}:\s+)?(?:[SJ5∫]\s.*\s[SJ5∫]$|[SJ∫]\s+[A-Z])"
+                      r"|\s[J∫](?:\s|$)|[a-z][J∫]$")
 # A sor elején magában álló kettőspont vagy pontosvessző (a beszélő neve nélkül maradt)
 LEADING_ORPHAN_PUNCTUATION = re.compile(r"^\s*[:;]+\s*")
 # A telefonhívás kijelzője a sor végén: „… alright? Jason 00:05 D”

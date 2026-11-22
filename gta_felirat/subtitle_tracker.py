@@ -78,12 +78,14 @@ def is_fuller(new: str, old: str) -> bool:
 
 
 def _contains_lines(new_lines: list[str], old_lines: list[str]) -> bool:
-    """Soronként benne van; a szóközöket nem nézzük, mert az OCR olykor kihagyja („this?Hey, look,”)."""
+    """Soronként benne van; csak a betűket és számokat nézzük, mert az OCR olykor kihagyja a szóközt
+    („this?Hey, look,”), vagy a sor végére pontot olvas, ahol a mondat a következő sorban folytatódik
+    („…criminal adjacent.” → „…criminal adjacent Isn't he?”)."""
     return all(_squeezed(old_line) in _squeezed(new_line) for new_line, old_line in zip(new_lines, old_lines))
 
 
 def _squeezed(line: str) -> str:
-    return "".join(line.lower().split())
+    return "".join(ch for ch in line.lower() if ch.isalnum())
 
 
 class SubtitleTracker:

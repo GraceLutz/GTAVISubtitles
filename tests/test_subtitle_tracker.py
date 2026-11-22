@@ -74,6 +74,18 @@ def test_shorter_read_missing_a_space_does_not_retrigger():
     assert tracker.update(full + ".", 0.2, confirmed=True) is None
 
 
+def test_read_alternating_with_and_without_the_wrapped_end_commits_only_once():
+    # Valós hiba: a sor vége („Isn't he?”) hol látszott, hol nem, és a két változat ötször váltotta egymást
+    tracker = make_tracker()
+    short = "Lucia: Dre'Quan? I mean... he's still kinda like, criminal adjacent."
+    full = "Lucia: Dre'Quan? I mean... he's still kinda like, criminal adjacent Isn't he?"
+    tracker.update(short, 0.0, confirmed=True)
+
+    assert tracker.update(full, 0.1, confirmed=True) == NewSubtitle(full)
+    for step in range(2, 8):
+        assert tracker.update(short if step % 2 else full, step / 10, confirmed=True) is None
+
+
 def test_reads_that_alternately_miss_the_upper_line_commit_only_once():
     # Valós hiba: a két beszélő sorát hol együtt, hol csak az alsót olvastuk, és mindkettőt újra meg újra kiírtuk
     tracker = make_tracker()

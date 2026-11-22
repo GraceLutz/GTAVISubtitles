@@ -45,11 +45,20 @@ def test_unfinished_sentence_continues_on_the_next_row():
                                      "DWNPLY: 5 All of these niggas they know me S",
                                      "DWNPLY: J Okay, okay, okay J",
                                      "I sell crack by the ounce ∫",
-                                     "DWNPLY: S Bitch I got packs at my house, I sell crack by the ounce ∫"])
+                                     "DWNPLY: S Bitch I got packs at my house, I sell crack by the ounce ∫",
+                                     # Valós hiba: egyetlen félreolvasott hangjegy mellett is lefordult a dal
+                                     "Bae-Luxe: J Wet lips. juicy kitty", "Bae-Luxe: J Ass fatJ",
+                                     "Lucia: S Big ol titties! J [laughs]"])
 def test_bracketed_caption_row_is_left_out_and_does_not_swallow_the_spoken_row_below(caption):
     lines = spoken_lines([(caption, UPPER), ("Lucia: Baby, this has been a long time comin'.", LOWER)])
 
     assert lines == (OcrLine("Lucia: Baby, this has been a long time comin'.", LOWER, (LOWER,)),)
+
+
+@pytest.mark.parametrize("spoken", ["Lucia: So what?", "Jason: Call me J.", "Lucia: Sorry, but that's all I have",
+                                    "Dre'Quan: Jason, look at this.", "Raul: 5 more minutes.", "Jacki: Oh, Kamal!"])
+def test_spoken_row_starting_like_a_note_is_still_translated(spoken):
+    assert spoken_lines([(spoken, LOWER)]) == (OcrLine(spoken, LOWER, (LOWER,)),)
 
 
 @pytest.mark.parametrize("first_row", ["Tourists: Okay, mister, I have had it up to here, okay.",
