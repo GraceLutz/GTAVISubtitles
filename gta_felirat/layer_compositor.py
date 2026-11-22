@@ -68,9 +68,10 @@ def text_patch(rendered: RenderedSubtitle) -> Patch:
     return to_patch(cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGR), np.ascontiguousarray(rgba[:, :, 3]))
 
 
-def cover_patch(source: np.ndarray, feather: int, strength: float) -> Patch | None:
+def cover_patch(source: np.ndarray, feather: int, strength: float, clean: np.ndarray | None = None,
+                clean_weight: np.ndarray | None = None) -> Patch | None:
     """A takarás foltja; None, ha teljesen átlátszó lenne (átlátszó panel, és nincs betű a területen)."""
-    frosted, weight = frosted_layer(source, feather, strength)
+    frosted, weight = frosted_layer(source, feather, strength, clean, clean_weight)
     alpha = (weight[:, :, 0] * 255.0 + 0.5).astype(np.uint8)
     if cv2.countNonZero(alpha) == 0:
         return None
@@ -159,13 +160,10 @@ class LayerCompositor:
         if key in self._covers:
             return self._covers[key]
         patch = None
-        if backdrop is not None:
-            area = job.area
-            offset_x, offset_y = area.left - backdrop.area.left, area.top - backdrop.area.top
-            source = backdrop.image[offset_y:offset_y + area.height, offset_x:offset_x + area.width]
-            # Ha a terv másik játékképhez készült (közben átméreteződött az ablak), nincs mit takarni
-            if min(offset_x, offset_y) >= 0 and source.shape[:2] == (area.height, area.width):
-                patch = cover_patch(source, job.feather, strength)
+        # Ha a terv másik játékképhez készült (közben átméreteződött az ablak), nincs mit takarni
+        parts = backdrop.crop(job.area) if backdrop is not None else None
+        if parts is not None:
+            patch = cover_patch(parts[0], job.feather, strength, parts[1], parts[2])
         self._covers[key] = patch
         return patch
 

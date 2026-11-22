@@ -16,6 +16,7 @@ from collections.abc import Callable
 
 import numpy as np
 
+from .background_memory import BackgroundMemory
 from .band_feed import CapturedBand
 from .frosted_cover import Backdrop
 from .handoff import BandWatcher, Inbox, LatestBox, ReadRows, RowRecognizer, TkWaker, start_worker
@@ -55,6 +56,7 @@ class RowPath:
         start_worker("row-recognizer", self._jobs, RowRecognizer(read_rows, self._inbox, min_score).submit)
         self._is_broken = False
         self._backdrop: tuple[BandSnapshot, Backdrop] | None = None
+        self._memory = BackgroundMemory()  # a betűk alatti háttér a korábbi képekről (Tk-szál)
 
     def wake(self) -> None:
         """Jelzés a Tk-szálnak; bármely szálból hívható, és nem blokkol (a pipeline a kész fordításnál hívja)."""
@@ -92,7 +94,7 @@ class RowPath:
         if snapshot is None:
             return None
         if self._backdrop is None or self._backdrop[0] is not snapshot:
-            self._backdrop = (snapshot, Backdrop(snapshot.image, snapshot.area))
+            self._backdrop = (snapshot, self._memory.backdrop(snapshot.image, snapshot.area, snapshot.captured_at))
         return self._backdrop[1]
 
     def suspend(self) -> None:
@@ -100,6 +102,7 @@ class RowPath:
         self._inbox.drain()
         self._pipeline.suspend_rows()
         self._backdrop = None
+        self._memory = BackgroundMemory()
 
     def close(self) -> None:
         """Leállítja a felismerő és az ébresztő szálat."""

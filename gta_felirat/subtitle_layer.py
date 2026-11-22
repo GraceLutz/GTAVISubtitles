@@ -65,10 +65,12 @@ def _draw_cover(frame: np.ndarray, job: CoverJob | BoxJob, strength: float,
     if backdrop is None:
         return frame  # a terv játékképpel készült, de az közben elveszett: nincs mivel takarni
     area = job.area
-    offset_x, offset_y = area.left - backdrop.area.left, area.top - backdrop.area.top
-    source = backdrop.image[offset_y:offset_y + area.height, offset_x:offset_x + area.width]
+    parts = backdrop.crop(area)
+    if parts is None:
+        return frame  # a terv más méretű játékképhez készült
+    source, clean, clean_weight = parts
     # Átlátszó panelnél a takarás is átlátszó: csak az angol betűk tűnnek el
-    frosted, weight = frosted_layer(source, job.feather, strength)
+    frosted, weight = frosted_layer(source, job.feather, strength, clean, clean_weight)
     # Képkockán a széle az éles képbe, átlátszó rétegen az élő játékképbe olvad
     return paste(frame, area.top, area.left, frosted, weight)
 

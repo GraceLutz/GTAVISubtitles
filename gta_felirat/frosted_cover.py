@@ -45,12 +45,33 @@ NAME_MIN_SPREAD = 30  # és a csatornái legalább ennyire eltérnek (a fehér b
 NAME_MAX_STROKE_PX = 7  # ennél vastagabb színes folt (hátsó lámpa, neon) nem betű (1080p-n)
 # A takarás magassága kb. tizenegyszerese a betűszárnak: nagyobb felbontáson a határ is nagyobb
 NAME_STROKE_HEIGHT_DIVISOR = 11
+# Az emlékezett háttér (background_memory) ellenőrzése: elmosva legfeljebb ennyivel térhet el a kitöltéstől
+PLAUSIBLE_BLUR_SIGMA = 4.0
+PLAUSIBLE_NEARBY_SIGMA = 8.0  # a betűk közvetlen környéke, amelyhez az emléket mérjük
+PLAUSIBLE_MAX_DEVIATION = 40.0
+PLAUSIBLE_FADE = 15.0  # e tartományon át csökken nullára a bizalom
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Backdrop:
     image: np.ndarray  # a játékkép takarás nélkül (BGR)
     area: Box  # hol van ez a kép a rajzolt képen
+    # A betűk alatti valódi háttér egy korábbi képről (background_memory.RememberedBackground): a .parts
+    # (emlékezett kép, hihetősége 0–1) ugyanakkora, mint az image. None: a betűk helyét elmosással töltjük ki
+    remembered: object | None = None
+
+    def crop(self, area: Box) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None] | None:
+        """Az area alatti rész: (kép, emlékezett háttér, hihetősége); None, ha az area nem fér bele."""
+        offset_x, offset_y = area.left - self.area.left, area.top - self.area.top
+        rows = slice(offset_y, offset_y + area.height)
+        cols = slice(offset_x, offset_x + area.width)
+        source = self.image[rows, cols]
+        if min(offset_x, offset_y) < 0 or source.shape[:2] != (area.height, area.width):
+            return None
+        if self.remembered is None:
+            return source, None, None
+        clean, clean_weight = self.remembered.parts
+        return source, clean[rows, cols], clean_weight[rows, cols]
 
 
 def cover_area(anchor: Box, margin: int, limits: Box, side_margin: int | None = None) -> Box:
@@ -68,19 +89,31 @@ _TEXT_GROW_KERNEL = _disc(TEXT_GROW_PX)
 _OUTLINE_REACH_KERNEL = _disc(OUTLINE_REACH_PX)
 
 
-def _text_mask(source: np.ndarray) -> np.ndarray:
+def text_mask(source: np.ndarray, scale: int = 1) -> np.ndarray:
+    """1 a felirat betűin és a körvonalukon, 0 máshol (uint8).
+
+    scale: a kép ennyiszer kisebb a játékképnél (a háttérmemória fele akkora képen keres, és nem egy sor
+    takarását, hanem az egész sávot nézi): a vonalvastagságok ennyivel kisebbek."""
+    if scale == 1:
+        return _text_mask(source)
+    return _text_mask(source, scale=scale, stroke_px=max(NAME_MAX_STROKE_PX // scale, 1) | 1)
+
+
+def _text_mask(source: np.ndarray, scale: int = 1, stroke_px: int | None = None) -> np.ndarray:
     """1 a felirat betűin és a körvonalukon, 0 máshol (uint8)."""
     darkest = cv2.min(cv2.min(source[:, :, 0], source[:, :, 1]), source[:, :, 2])  # ~20× gyorsabb a numpy-nál
     brightest = cv2.max(cv2.max(source[:, :, 0], source[:, :, 1]), source[:, :, 2])
-    has_dark_nearby = cv2.erode(brightest, _OUTLINE_REACH_KERNEL) <= OUTLINE_LEVEL
+    outline_kernel = _OUTLINE_REACH_KERNEL if scale == 1 else _disc(max(OUTLINE_REACH_PX // scale, 1))
+    has_dark_nearby = cv2.erode(brightest, outline_kernel) <= OUTLINE_LEVEL
     level = _text_level(darkest)
     letters = (darkest >= level) & has_dark_nearby
     if level < TEXT_LEVEL:
         letters &= cv2.subtract(brightest, darkest) <= MAX_GREY_SPREAD
-    stroke_px = _name_stroke_px(source.shape[0])
+    stroke_px = stroke_px or _name_stroke_px(source.shape[0])
     letters |= _name_letters(brightest, darkest, stroke_px) & has_dark_nearby
     letters |= _grey_letters(brightest, darkest, stroke_px) & has_dark_nearby
-    return cv2.dilate(letters.astype(np.uint8), _TEXT_GROW_KERNEL)
+    grow_kernel = _TEXT_GROW_KERNEL if scale == 1 else _disc(-(-TEXT_GROW_PX // scale))
+    return cv2.dilate(letters.astype(np.uint8), grow_kernel)
 
 
 def _grey_letters(brightest: np.ndarray, darkest: np.ndarray, stroke_px: int) -> np.ndarray:
@@ -155,20 +188,42 @@ def _letter_coverage(text: np.ndarray) -> np.ndarray:
     return cv2.GaussianBlur(text.astype(np.float32), (0, 0), ERASE_SOFTEN_SIGMA)
 
 
-def frosted_layer(source: np.ndarray, feather: int, strength: float = 1.0) -> tuple[np.ndarray, np.ndarray]:
+def _plausibility(remembered: np.ndarray, blurred: np.ndarray) -> np.ndarray:
+    """0–1: az emlékezett háttér nagy vonalaiban (a mintázatot elmosva) illik-e a mostani környékhez.
+
+    A minta (tégla, csík) eltérhet az elmosott kitöltéstől, de egy közben odakerült vagy elmozdult
+    tárgy világos/sötét foltja nem: az ilyen emlék nem kerül a betűk helyére."""
+    coarse = cv2.GaussianBlur(remembered, (0, 0), PLAUSIBLE_BLUR_SIGMA)
+    difference = cv2.absdiff(coarse, blurred)
+    # A legjobban eltérő csatorna számít: egy sötét háttér előtti piros folt szürkében alig tér el
+    deviation = cv2.max(cv2.max(difference[:, :, 0], difference[:, :, 1]), difference[:, :, 2])
+    return np.clip((PLAUSIBLE_MAX_DEVIATION - deviation) / PLAUSIBLE_FADE, 0.0, 1.0)
+
+
+def frosted_layer(source: np.ndarray, feather: int, strength: float = 1.0, clean: np.ndarray | None = None,
+                  clean_weight: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
     """A takarás színe (elmosott; float BGR) és fedése (0 a szélén, 1 belül; H×W×1).
 
     strength: 1 = teljes matt üveg, sötétítve; 0 = csak a betűk helyén, sötétítés nélkül.
+    clean, clean_weight: a betűk alatti valódi háttér egy korábbi képről, és hol hihető (Backdrop.crop).
+    Ahol hihető, a betűk helyére ez kerül: álló képen így nem marad elkent folt a szöveg helyén.
     Átlátszó rétegen a lágy szél az alatta futó élő játékképbe olvad, így mozgás közben sem
     látszik, hogy a forráskép egy pillanattal korábbi.
     """
     height, width = source.shape[:2]
     sigma = max(MIN_BLUR_SIGMA, height * BLUR_SIGMA_RATIO)
     text = _text_mask(source)
-    frosted = _blur_without_text(source, text, sigma, 1.0 - (1.0 - DARKEN) * strength)
+    darken = 1.0 - (1.0 - DARKEN) * strength
+    frosted = _blur_without_text(source, text, sigma, darken)
+    letters = _letter_coverage(text)
+    if clean is not None and clean_weight is not None:
+        remembered = clean.astype(np.float32) * darken
+        # A betűk közvetlen környéke (szűk elmosás): ehhez kell illenie az emléknek, nem a tág átlaghoz
+        nearby = _blur_without_text(source, text, PLAUSIBLE_NEARBY_SIGMA, darken)
+        use_clean = (letters * clean_weight * _plausibility(remembered, nearby))[:, :, None]
+        frosted = frosted * (1.0 - use_clean) + remembered * use_clean
     weight = _edge_weight(height, width, feather)
     if strength < 1.0:
-        letters = _letter_coverage(text)
         weight = weight * (letters + (1.0 - letters) * strength)
     return frosted, weight[:, :, None]
 
